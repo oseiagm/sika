@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 330" width="1200" height="330" font-family="Helvetica, Arial, sans-serif">
+  <title>How a Sika trade flows: the AI proposes, code decides, the investor approves</title>
+  <rect width="1200" height="330" fill="#eef2ee"/>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#14261d"/>
+    </marker>
+  </defs>
+
+  <!-- Lanes -->
+  <text x="40" y="36" font-size="15" fill="#4d6157">AI (Muse Spark)</text>
+  <text x="378" y="36" font-size="15" fill="#4d6157">Fixed code</text>
+  <text x="886" y="36" font-size="15" fill="#4d6157">The investor</text>
+  <line x1="360" y1="22" x2="360" y2="300" stroke="#c9d5cc" stroke-dasharray="4 5"/>
+  <line x1="868" y1="22" x2="868" y2="300" stroke="#c9d5cc" stroke-dasharray="4 5"/>
+
+  <!-- Nodes -->
+  <g font-size="16" fill="#14261d">
+    <rect x="40" y="62" width="280" height="96" rx="12" fill="#ffffff" stroke="#14261d" stroke-width="1.5"/>
+    <text x="60" y="94" font-weight="700">Suggests a trade</text>
+    <text x="60" y="118" font-size="14" fill="#4d6157">Reads the plan, holdings, prices, news.</text>
+    <text x="60" y="138" font-size="14" fill="#4d6157">Can only call propose_trade.</text>
+
+    <rect x="390" y="62" width="200" height="96" rx="12" fill="#ffffff" stroke="#14261d" stroke-width="1.5"/>
+    <text x="408" y="94" font-weight="700">Prices it</text>
+    <text x="408" y="118" font-size="14" fill="#4d6157">IC live order book:</text>
+    <text x="408" y="138" font-size="14" fill="#4d6157">buy at ask, sell at bid</text>
+
+    <rect x="630" y="62" width="210" height="96" rx="12" fill="#ffffff" stroke="#14261d" stroke-width="1.5"/>
+    <text x="648" y="94" font-weight="700">Checks the plan</text>
+    <text x="648" y="118" font-size="14" fill="#4d6157">Limits, budget, never-buy,</text>
+    <text x="648" y="138" font-size="14" fill="#4d6157">no loss sales, a counterparty</text>
+
+    <rect x="886" y="62" width="274" height="96" rx="12" fill="#ffffff" stroke="#b7862a" stroke-width="2.5"/>
+    <text x="906" y="94" font-weight="700">Taps Approve</text>
+    <text x="906" y="118" font-size="14" fill="#4d6157">Signed proposal, every charge shown,</text>
+    <text x="906" y="138" font-size="14" fill="#4d6157">valid 30 minutes</text>
+
+    <rect x="630" y="214" width="210" height="86" rx="12" fill="#ffffff" stroke="#1e7a46" stroke-width="2"/>
+    <text x="648" y="246" font-weight="700" fill="#1e7a46">Executes once</text>
+    <text x="648" y="270" font-size="14" fill="#4d6157">Re-checks price and plan,</text>
+    <text x="648" y="288" font-size="14" fill="#4d6157">fills on the live book</text>
+
+    <rect x="390" y="214" width="200" height="86" rx="12" fill="#ffffff" stroke="#b3261e" stroke-width="2"/>
+    <text x="408" y="246" font-weight="700" fill="#b3261e">Blocked</text>
+    <text x="408" y="270" font-size="14" fill="#4d6157">Sika explains which limit</text>
+    <text x="408" y="288" font-size="14" fill="#4d6157">and what would fit</text>
+  </g>
+
+  <!-- Arrows -->
+  <g stroke="#14261d" stroke-width="1.6" fill="none" marker-end="url(#arrow)">
+    <line x1="320" y1="110" x2="386" y2="110"/>
+    <line x1="590" y1="110" x2="626" y2="110"/>
+    <line x1="840" y1="110" x2="882" y2="110"/>
+    <path d="M1023 158 L1023 257 L844 257"/>
+    <path d="M690 158 L690 186 L490 186 L490 210"/>
+  </g>
+  <text x="560" y="180" font-size="13" fill="#b3261e">fails a check</text>
+  <text x="1032" y="214" font-size="13" fill="#4d6157">Approve tap</text>
+</svg>

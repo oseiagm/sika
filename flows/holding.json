@@ -1,0 +1,58 @@
+{
+  "version": "7.0",
+  "screens": [
+    {
+      "id": "HOLDING",
+      "title": "Add a holding",
+      "terminal": true,
+      "success": true,
+      "data": {
+        "stocks": {
+          "type": "array",
+          "items": { "type": "object", "properties": { "id": { "type": "string" }, "title": { "type": "string" } } },
+          "__example__": [{ "id": "MTNGH", "title": "MTNGH · MTN Ghana Limited" }]
+        }
+      },
+      "layout": {
+        "type": "SingleColumnLayout",
+        "children": [
+          { "type": "TextBody", "text": "Add a GSE stock you own, or correct one. Sika adds the buying charges for you." },
+          { "type": "Dropdown", "label": "Stock", "name": "symbol", "data-source": "${data.stocks}", "required": true },
+          { "type": "TextInput", "label": "Number of shares", "name": "shares", "input-type": "number", "required": true },
+          {
+            "type": "RadioButtonsGroup",
+            "label": "What you paid",
+            "name": "cost_type",
+            "required": true,
+            "data-source": [
+              { "id": "price", "title": "Price per share" },
+              { "id": "total", "title": "Total paid" },
+              { "id": "unknown", "title": "I don't know" }
+            ]
+          },
+          {
+            "type": "TextInput",
+            "label": "Amount (GHS)",
+            "name": "amount",
+            "input-type": "number",
+            "required": false,
+            "helper-text": "Leave empty if you don't know"
+          },
+          {
+            "type": "Footer",
+            "label": "Save",
+            "on-click-action": {
+              "name": "complete",
+              "payload": {
+                "symbol": "${form.symbol}",
+                "shares": "${form.shares}",
+                "cost_type": "${form.cost_type}",
+                "amount": "${form.amount}"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

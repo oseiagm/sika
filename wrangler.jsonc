@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sika",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-20",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "alias": { "@eshaz/web-worker": "./src/voice/no-web-worker.ts" },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "sika", "database_id": "0303a7a7-39ec-4f98-8709-ea317f274dff", "migrations_dir": "migrations" }
+  ],
+  "queues": {
+    "producers": [{ "binding": "INBOX", "queue": "sika-inbox" }],
+    "consumers": [{ "queue": "sika-inbox", "max_batch_size": 1, "max_batch_timeout": 0, "max_retries": 2 }]
+  },
+  "triggers": { "crons": ["*/30 10-15 * * 1-5", "0 9 * * *"] },
+  "vars": {
+    "META_MODEL": "muse-spark-1.3",
+    "PUBLIC_BASE_URL": "https://sika.cloudflareos-01eeeb.workers.dev",
+    "WA_HOLDING_FLOW_ID": "1449330897191289"
+  }
+  // Secrets (wrangler secret put): MODEL_API_KEY, WA_PHONE_NUMBER_ID, WA_BUSINESS_ACCOUNT_ID,
+  // WA_ACCESS_TOKEN, WA_APP_SECRET, WA_VERIFY_TOKEN
+}

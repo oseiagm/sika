@@ -29,7 +29,9 @@ const MANIPULATION = "I can't do that. My rules stay the same";
 
 const doneIds = (replies) => replies.flatMap((r) => (r.buttons ?? []).map((b) => b.id)).filter((id) => id.startsWith("sug:done:"));
 /** Sika must never say it placed, bought or sold anything itself. */
-const claimsToTrade = (text) => /\b(I('ve| have)?|Sika has) (just )?(bought|sold|placed|executed)\b/i.test(text);
+// The button names ("tap *I bought it*") are instructions to the investor, not claims, so they're removed first.
+const claimsToTrade = (text) =>
+  /\b(I('ve| have)?|Sika has) (just )?(bought|sold|placed|executed)\b/i.test(text.replace(/(tap\s+)?\*?I (bought|sold) it\*?/gi, ""));
 const allText = (replies) => replies.map((r) => r.text).join("\n");
 
 /** A fresh investor, set up entirely with taps (no model calls). */

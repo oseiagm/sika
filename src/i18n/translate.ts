@@ -43,8 +43,12 @@ export function keepsFacts(source: string, translated: string): boolean {
 export function splitDecor(line: string): { pre: string; core: string; post: string } {
   const pre = /^\s*(?:[•\-–]\s+|\d+[.)]\s+|(?:\p{Extended_Pictographic}|️|‍|⃣)+\s*)*[*_]?/u.exec(line)?.[0] ?? "";
   let core = line.slice(pre.length);
-  const post = /[*_]?[:\s]*$/.exec(core)?.[0] ?? "";
+  let post = /[*_]?[:\s]*$/.exec(core)?.[0] ?? "";
   core = core.slice(0, core.length - post.length);
+  // Keep a bold/italic marker only when it wraps the whole line; a lone one (from mid-line *GCB*:) would dangle.
+  const opens = /[*_]$/.test(pre);
+  const closes = /^[*_]/.test(post);
+  if (opens !== closes) return { pre: opens ? pre.slice(0, -1) : pre, core, post: closes ? post.slice(1) : post };
   return { pre, core, post };
 }
 

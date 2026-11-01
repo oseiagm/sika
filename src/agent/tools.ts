@@ -30,6 +30,8 @@ export interface ToolContext {
   outbox: Outgoing[];
   /** Links tools returned this turn: the only ones the agent may show (see runAgent). */
   sources: Set<string>;
+  /** Keeps background work (a company-facts refresh) alive after the reply, when the Worker allows it. */
+  background?: (p: Promise<unknown>) => void;
 }
 
 /** Models sometimes send "null" or "" for an empty optional field. */
@@ -188,7 +190,7 @@ const handlers: { [K in ToolName]: (args: z.infer<(typeof Args)[K]>, ctx: ToolCo
       const cache = ctx.db.profiles();
       const [tapes, profiles] = await Promise.all([
         ctx.db.recentTapes().catch(() => []),
-        Promise.all(valuations.map((v) => companyProfile(ctx.meta, ctx.model, cache, v.symbol, v.name).catch(() => null))),
+        Promise.all(valuations.map((v) => companyProfile(ctx.meta, ctx.model, cache, v.symbol, v.name, { background: ctx.background }).catch(() => null))),
       ]);
       const bySymbol = new Map<string, CompanyProfile | null>(valuations.map((v, i) => [v.symbol, profiles[i] ?? null]));
       for (const p of profiles) for (const s of p?.sources ?? []) ctx.sources.add(s.url);
@@ -217,8 +219,8 @@ const handlers: { [K in ToolName]: (args: z.infer<(typeof Args)[K]>, ctx: ToolCo
 
   async stock_details({ symbol, amountCedis }, ctx) {
     const q = quoteFor(ctx, symbol);
-    const [one] = (await handlers.compare_stocks({ symbols: [q.symbol], amountCedis, companyFacts: true }, ctx)) as unknown[];
-    return one;
+    const r = (await handlers.compare_stocks({ symbols: [q.symbol], amountCedis, companyFacts: true }, ctx)) as unknown[] | { stocks: unknown[]; note: string };
+    return Array.isArray(r) ? r[0] : { ...(r.stocks[0] as object), note: r.note };
   },
 
   async compare_stocks({ symbols, amountCedis, companyFacts }, ctx) {
@@ -230,14 +232,18 @@ const handlers: { [K in ToolName]: (args: z.infer<(typeof Args)[K]>, ctx: ToolCo
       refreshLive(ctx.quotes, wanted),
       ctx.db.recentTapes().catch(() => []),
       companyFacts
-        ? Promise.all(asked.map((s) => companyProfile(ctx.meta, ctx.model, cache, s, ctx.quotes.get(s)!.name).catch(() => null)))
+        ? Promise.all(asked.map((s) => companyProfile(ctx.meta, ctx.model, cache, s, ctx.quotes.get(s)!.name, { background: ctx.background }).catch(() => null)))
         : Promise.resolve(asked.map(() => null)),
     ]);
     const extras = new Map<string, StockExtras>(asked.map((s, i) => [s, { profile: profiles[i], activity: sessionActivity(tapes, s) }]));
     // News and fact links the comparison returns may be shown to the investor.
     for (const p of profiles) for (const u of [...(p?.sources ?? []).map((x) => x.url), ...(p?.recentNews ?? []).map((n) => n.url)]) ctx.sources.add(u);
     const mandate = ctx.user.mandateConfirmed ? ctx.user.mandate : null;
-    return compareStocks(symbols, ctx.quotes, holdings, mandate, amountCedis != null ? cedisToPesewas(amountCedis) : null, extras);
+    const result = compareStocks(symbols, ctx.quotes, holdings, mandate, amountCedis != null ? cedisToPesewas(amountCedis) : null, extras);
+    const missing = companyFacts ? asked.filter((_, i) => !profiles[i]) : [];
+    return missing.length
+      ? { stocks: result, note: `Company facts for ${missing.join(", ")} are still being looked up; say so in one short line and offer to check again in a minute. Everything else here is exact.` }
+      : result;
   },
 
   async search_news({ query }, ctx) {

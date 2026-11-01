@@ -154,6 +154,8 @@ interface Turn {
   user: User;
   flow: FlowState;
   quotes: Map<string, Quote>;
+  /** The Worker's waitUntil: lets background work (refreshing company facts) finish after the reply. */
+  waitUntil?: (p: Promise<unknown>) => void;
 }
 
 // ── Sending ────────────────────────────────────────────────────────────────
@@ -615,7 +617,7 @@ async function answerThenResume(t: Turn, text: string, step: string, resume: Ui)
   if (await outOfScope(t, text)) return deliver(t, resume);
   const history = (await t.db.history(t.to)).filter((m) => m.content !== MENU_MARKER);
   const result = await runAgent(
-    { db: t.db, user: t.user, quotes: t.quotes, meta: metaClient(t.env.MODEL_API_KEY), model: t.env.META_MODEL },
+    { db: t.db, user: t.user, quotes: t.quotes, meta: metaClient(t.env.MODEL_API_KEY), model: t.env.META_MODEL, background: t.waitUntil },
     history,
     0,
     step,
@@ -644,7 +646,7 @@ async function converse(t: Turn, text: string): Promise<void> {
   const history = (await t.db.history(t.to)).filter((m) => m.content !== MENU_MARKER);
   const holdingCount = (await t.db.holdings(t.to)).length;
   const result = await runAgent(
-    { db: t.db, user: t.user, quotes: t.quotes, meta: metaClient(t.env.MODEL_API_KEY), model: t.env.META_MODEL },
+    { db: t.db, user: t.user, quotes: t.quotes, meta: metaClient(t.env.MODEL_API_KEY), model: t.env.META_MODEL, background: t.waitUntil },
     history,
     holdingCount,
   );
@@ -1059,7 +1061,7 @@ async function inEnglish(t: Turn, text: string): Promise<string> {
 
 // ── Entry point ───────────────────────────────────────────────────────────
 
-export async function handle(message: Inbound, env: Env, send: Sender = whatsappSender(env)): Promise<void> {
+export async function handle(message: Inbound, env: Env, send: Sender = whatsappSender(env), waitUntil?: (p: Promise<unknown>) => void): Promise<void> {
   const db = new Db(env.DB);
   if (!(await db.firstDelivery(message.id))) return;
   await send.typing(message.id);
@@ -1068,7 +1070,7 @@ export async function handle(message: Inbound, env: Env, send: Sender = whatsapp
   const user = await db.user(to, message.name);
   const flow = inferFlow(user.flow, user.profile !== null, user.mandateConfirmed, (await db.holdings(to)).length);
   const quotes = new Map<string, Quote>((await fetchQuotes()).map((q) => [q.symbol, q]));
-  const t: Turn = { db, env, send: localizedSender(env, send, db), to, user, flow, quotes };
+  const t: Turn = { db, env, send: localizedSender(env, send, db), to, user, flow, quotes, waitUntil };
   await route(t, message);
   // Reply in the investor's mode: a voice note after the text when they spoke (or always, if they chose that).
   await t.send.speak(to, message.kind === "audio");

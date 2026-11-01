@@ -483,6 +483,12 @@ export class Db {
     return results.map((r) => ({ at: r.at, snapshot: JSON.parse(r.snapshot_json) }));
   }
 
+  /** Every stock anyone holds or follows (web demo users included), for keeping company facts fresh. */
+  async watchedSymbols(): Promise<string[]> {
+    const { results } = await this.d1.prepare("SELECT symbol FROM holdings UNION SELECT symbol FROM follows").all<{ symbol: string }>();
+    return results.map((r) => r.symbol);
+  }
+
   /** Company facts from the web, shared by everyone. */
   profiles(): ProfileCache {
     return {

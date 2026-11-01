@@ -28,7 +28,7 @@ Sika **stays on topic**. It only talks about investing on the GSE. Off-topic req
 
 Every suggestion is visible on a private activity page: the AI's reasoning, the order book, each plan check, and what you did.
 
-I red-teamed it with prompt injection, "forget my limits", asking it to place the order itself, forged taps and double taps. Sika doesn't hold money or send orders, so the worst a successful attack could do is a bad suggestion or a wrong record. Fixed code stops both.
+I red-teamed it with prompt injection, "forget my limits", asking it to place the order itself, forged taps and double taps. Sika doesn't hold money or send orders, so the worst a successful attack could do is a bad suggestion or a wrong record. Fixed code stops both. All 14 attacks in the suite were stopped, including off-topic requests and jailbreaks.
 
 Try it in a browser: https://sika.cloudflareos-01eeeb.workers.dev
 

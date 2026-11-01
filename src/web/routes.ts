@@ -101,7 +101,7 @@ async function runTurn(c: Context<{ Bindings: Env }>, db: Db, session: string, m
   };
   const from = `web-${session}`;
   try {
-    await handle({ ...message, id: crypto.randomUUID(), from, timestamp: Date.now() } as Inbound, c.env, send);
+    await handle({ ...message, id: crypto.randomUUID(), from, timestamp: Date.now() } as Inbound, c.env, send, (p) => c.executionCtx.waitUntil(p.catch(() => {})));
   } catch (err) {
     console.error("web chat failed", err);
     replies.push({ text: "Something went wrong on my side. Please try that again." });

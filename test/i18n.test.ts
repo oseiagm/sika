@@ -60,6 +60,8 @@ describe("line handling", () => {
     expect(splitDecor("• Monthly: GHS 500.00")).toEqual({ pre: "• ", core: "Monthly: GHS 500.00", post: "" });
     expect(splitDecor("*Your investing plan*")).toEqual({ pre: "*", core: "Your investing plan", post: "*" });
     expect(splitDecor("✅ Fits your plan (8 checks)").pre).toBe("✅ ");
+    // A mid-line *GCB* leaves no lone marker behind.
+    expect(splitDecor("Latest for *GCB*:")).toEqual({ pre: "", core: "Latest for *GCB", post: ":" });
   });
 
   it("leaves figure lines alone and translates sentences", () => {

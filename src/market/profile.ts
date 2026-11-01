@@ -46,12 +46,35 @@ export const CompanyProfile = z.object({
 });
 export type CompanyProfile = z.infer<typeof CompanyProfile> & { sources: Source[]; fetchedAt: string };
 
+/**
+ * Dividends per share over the last 12 months, but only when the web's figure is believable: the last
+ * payment must be dated within about 13 months. (A live search once counted a 2025 dividend as "last
+ * 12 months" in November 2026, giving a 24% yield.) Null when it can't be trusted.
+ */
+export function trailingDividend(p: CompanyProfile | null | undefined, now = new Date()): number | null {
+  const d = p?.dividends;
+  const dps = d?.last12MonthsPerShareCedis ?? null;
+  if (dps === null) return null;
+  if (dps === 0) return 0;
+  const paid = d?.lastPaid ? Date.parse(d.lastPaid.length === 7 ? `${d.lastPaid}-01` : d.lastPaid) : NaN;
+  if (Number.isNaN(paid)) return null;
+  return now.getTime() - paid <= 396 * 86_400_000 ? dps : null;
+}
+
+/** GSE yields can be high, but past this a web figure is more likely wrong than real. */
+export const IMPLAUSIBLE_YIELD_BPS = 1_500n;
+
 export interface ProfileCache {
   get(symbol: string): Promise<{ json: string; fetchedAt: string } | null>;
   put(symbol: string, json: string): Promise<void>;
 }
 
-const MAX_AGE_MS = 24 * 3_600_000;
+/** Fresh enough to use without refreshing. Older facts are still shown at once, then refreshed in the background. */
+const FRESH_MS = 24 * 3_600_000;
+/** Past this, facts are too old to show. */
+const MAX_AGE_MS = 30 * 24 * 3_600_000;
+/** The longest an investor waits for a first-ever lookup; after that the reply goes without company facts. */
+export const LOOKUP_WAIT_MS = 12_000;
 
 export function parseProfile(raw: string): z.infer<typeof CompanyProfile> | null {
   const start = raw.indexOf("{");
@@ -84,12 +107,70 @@ async function search(meta: Pick<OpenAI, "responses">, model: string, symbol: st
   return { ...body, sources: extractSources(r.output as unknown[], r.output_text ?? ""), fetchedAt: new Date().toISOString() };
 }
 
-/** The cached profile if it's under a day old, otherwise a fresh search (or the stale one if that fails). */
-export async function companyProfile(meta: Pick<OpenAI, "responses">, model: string, cache: ProfileCache, symbol: string, company: string): Promise<CompanyProfile | null> {
-  const hit = await cache.get(symbol);
-  const cached = hit ? (JSON.parse(hit.json) as CompanyProfile) : null;
-  if (cached && Date.now() - Date.parse(hit!.fetchedAt) < MAX_AGE_MS) return cached;
+/** Searches and caches; null when the search fails. */
+export async function refreshProfile(meta: Pick<OpenAI, "responses">, model: string, cache: ProfileCache, symbol: string, company: string): Promise<CompanyProfile | null> {
   const fresh = await search(meta, model, symbol, company).catch(() => null);
   if (fresh) await cache.put(symbol, JSON.stringify(fresh));
-  return fresh ?? cached;
+  return fresh;
+}
+
+const inFlight = new Map<string, Promise<CompanyProfile | null>>();
+
+/**
+ * Company facts without making the investor wait:
+ * - cached and under a day old: returned as is;
+ * - cached but older (up to 30 days): returned at once, refreshed in the background;
+ * - never looked up: searched, but only waited for up to LOOKUP_WAIT_MS; the search carries on and
+ *   fills the cache for next time. The scheduled job (warmProfiles) keeps most stocks fresh anyway.
+ * `background` keeps a refresh alive after the reply (the Worker's waitUntil); without it, it may be cut short.
+ */
+export async function companyProfile(
+  meta: Pick<OpenAI, "responses">,
+  model: string,
+  cache: ProfileCache,
+  symbol: string,
+  company: string,
+  opts: { wait?: number; background?: (p: Promise<unknown>) => void } = {},
+): Promise<CompanyProfile | null> {
+  const hit = await cache.get(symbol);
+  const age = hit ? Date.now() - Date.parse(hit.fetchedAt) : Infinity;
+  const cached = hit && age < MAX_AGE_MS ? (JSON.parse(hit.json) as CompanyProfile) : null;
+  if (cached && age < FRESH_MS) return cached;
+
+  let job = inFlight.get(symbol);
+  if (!job) {
+    job = refreshProfile(meta, model, cache, symbol, company).finally(() => inFlight.delete(symbol));
+    inFlight.set(symbol, job);
+    opts.background?.(job);
+  }
+  if (cached) return cached;
+  const wait = opts.wait ?? LOOKUP_WAIT_MS;
+  return Promise.race([job, new Promise<null>((resolve) => setTimeout(() => resolve(null), wait))]);
+}
+
+/**
+ * Scheduled (weekday mornings and midday): refreshes facts for every stock someone holds or follows,
+ * plus the most traded, so comparisons and deep dives answer from the cache.
+ */
+export async function warmProfiles(
+  meta: Pick<OpenAI, "responses">,
+  model: string,
+  cache: ProfileCache,
+  stocks: { symbol: string; name: string }[],
+  concurrency = 4,
+): Promise<{ refreshed: number; failed: number }> {
+  let refreshed = 0;
+  let failed = 0;
+  const queue = [...stocks];
+  await Promise.all(
+    Array.from({ length: concurrency }, async () => {
+      for (let s = queue.shift(); s; s = queue.shift()) {
+        const hit = await cache.get(s.symbol);
+        if (hit && Date.now() - Date.parse(hit.fetchedAt) < FRESH_MS / 2) continue;
+        if (await refreshProfile(meta, model, cache, s.symbol, s.name)) refreshed++;
+        else failed++;
+      }
+    }),
+  );
+  return { refreshed, failed };
 }

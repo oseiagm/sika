@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { ghs } from "./fees/engine";
 import { checkPriceAlerts, monthlyReminder } from "./alerts/monitor";
 import { checkNews } from "./news/monitor";
+import { warmCompanyFacts } from "./market/warm";
 import { handle, localizedSender, whatsappSender } from "./handle";
 import { prepareMarket, recordTape } from "./market/replay";
 import { devSeedPage } from "./web/devSeed";
@@ -95,6 +96,7 @@ app.post("/dev/cron/:job", async (c) => {
   if (c.req.param("job") === "record") await recordTape(c.env);
   else if (c.req.param("job") === "alerts") await checkPriceAlerts(c.env, localizedSender(c.env, send));
   else if (c.req.param("job") === "news") await checkNews(c.env, localizedSender(c.env, send));
+  else if (c.req.param("job") === "facts") return c.json(await warmCompanyFacts(c.env));
   else await monthlyReminder(c.env, localizedSender(c.env, send));
   return c.json(sent);
 });
@@ -153,13 +155,17 @@ export default {
       await checkPriceAlerts(env, send);
     }
     else if (controller.cron === MONTHLY_REMINDER) await monthlyReminder(env, send);
-    else if (controller.cron === NEWS_CHECK) await checkNews(env, send);
+    else if (controller.cron === NEWS_CHECK) {
+      // Company facts first, so the news check and the day's comparisons answer from the cache.
+      await warmCompanyFacts(env).catch((err) => console.error("warming company facts failed", err));
+      await checkNews(env, send);
+    }
   },
-  async queue(batch: MessageBatch<Inbound>, env: Env): Promise<void> {
+  async queue(batch: MessageBatch<Inbound>, env: Env, ctx: ExecutionContext): Promise<void> {
     for (const msg of batch.messages) {
       try {
         await prepareMarket(env);
-        await handle(msg.body, env);
+        await handle(msg.body, env, undefined, (p) => ctx.waitUntil(p.catch(() => {})));
       } catch (err) {
         // Not retried: the message id is already marked handled, and a half-sent reply shouldn't repeat.
         console.error("handle failed", msg.body.id, err);

@@ -4,7 +4,7 @@ import { compareStocks, valuation } from "../src/market/compare";
 import { marketOverview } from "../src/market/overview";
 import { portfolioInsights } from "../src/portfolio/insights";
 import type { Valuation } from "../src/portfolio/holdings";
-import { parseProfile, type CompanyProfile } from "../src/market/profile";
+import { companyProfile, parseProfile, warmProfiles, type CompanyProfile } from "../src/market/profile";
 import type { Quote } from "../src/market/quotes";
 
 const q = (over: Partial<Quote> = {}): Quote => ({
@@ -65,6 +65,18 @@ describe("valuation from the live price", () => {
     expect(v.marketCap).toMatch(/^about GHS 82,960,701,930\.00/);
     expect(v.dividendYield).toMatch(/^4\.44%/);
     expect(v.peRatio).toBe("9.4 (as reported)");
+  });
+
+  it("won't trust a 12-month dividend whose last payment is over a year old (the CalBank case)", () => {
+    const stale = profile({ dividends: { lastPerShareCedis: 0.18, lastPaid: "2025-06-26", last12MonthsPerShareCedis: 0.18, note: null } });
+    expect(valuation(q({ last: 74n }), stale, new Date("2026-11-01")).dividendYield).toBe("not shown: the web's 12-month dividend figure isn't recent enough to trust");
+  });
+
+  it("flags a yield too high to be believable, and says when there was no dividend", () => {
+    const high = profile({ dividends: { lastPerShareCedis: 0.18, lastPaid: "2026-10", last12MonthsPerShareCedis: 0.18, note: null } });
+    expect(valuation(q({ last: 74n }), high, new Date("2026-11-01")).dividendYield).toMatch(/^not shown: .* gives 24.32%, which looks wrong/);
+    const none = profile({ dividends: { lastPerShareCedis: 0, lastPaid: null, last12MonthsPerShareCedis: 0, note: null } });
+    expect(valuation(q(), none).dividendYield).toBe("none: no dividend in the last 12 months");
   });
 
   it("leaves out what the web couldn't confirm", () => {
@@ -129,5 +141,55 @@ describe("portfolio insights", () => {
     expect(i.dividendsLast12Months.byStock).toEqual(["MTNGH: about GHS 300.00", "CAL: no recent dividend"]);
     expect(i.dividendsNotKnown).toEqual(["XYZ"]);
     expect(i.mayBeHardToSell).toEqual(["CAL traded in only 1 of the last 5 sessions"]);
+  });
+});
+
+describe("company facts without the wait", () => {
+  const json = JSON.stringify({ sector: "Banking", industry: null, business: null, sharesOutstanding: null, dividends: null, peRatio: null, latestResults: null, recentNews: [] });
+  const fakeMeta = (delayMs: number) => {
+    let calls = 0;
+    const meta = { responses: { create: async () => (calls++, await new Promise((r) => setTimeout(r, delayMs)), { output_text: json, output: [] }) } } as never;
+    return { meta, calls: () => calls };
+  };
+  const cacheWith = (entry?: { json: string; fetchedAt: string }) => {
+    const store = new Map<string, { json: string; fetchedAt: string }>(entry ? [["CAL", entry]] : []);
+    return { store, get: async (s: string) => store.get(s) ?? null, put: async (s: string, j: string) => void store.set(s, { json: j, fetchedAt: new Date().toISOString() }) };
+  };
+  const stored = (hoursOld: number) => ({ json: JSON.stringify({ ...profile({ sector: "Old sector" }) }), fetchedAt: new Date(Date.now() - hoursOld * 3_600_000).toISOString() });
+
+  it("answers from a fresh cache without searching", async () => {
+    const { meta, calls } = fakeMeta(0);
+    const p = await companyProfile(meta, "m", cacheWith(stored(2)), "CAL", "CalBank");
+    expect(p?.sector).toBe("Old sector");
+    expect(calls()).toBe(0);
+  });
+
+  it("answers at once from an older cache and refreshes in the background", async () => {
+    const { meta, calls } = fakeMeta(50);
+    const cache = cacheWith(stored(48));
+    const jobs: Promise<unknown>[] = [];
+    const t0 = Date.now();
+    const p = await companyProfile(meta, "m", cache, "CAL", "CalBank", { background: (j) => void jobs.push(j) });
+    expect(Date.now() - t0).toBeLessThan(40);
+    expect(p?.sector).toBe("Old sector");
+    await Promise.all(jobs);
+    expect(calls()).toBe(1);
+    expect(JSON.parse(cache.store.get("CAL")!.json).sector).toBe("Banking");
+  });
+
+  it("waits only briefly for a first lookup, which still fills the cache", async () => {
+    const { meta } = fakeMeta(80);
+    const cache = cacheWith();
+    const jobs: Promise<unknown>[] = [];
+    expect(await companyProfile(meta, "m", cache, "CAL", "CalBank", { wait: 10, background: (j) => void jobs.push(j) })).toBeNull();
+    await Promise.all(jobs);
+    expect(JSON.parse(cache.store.get("CAL")!.json).sector).toBe("Banking");
+  });
+
+  it("warms only what isn't fresh", async () => {
+    const { meta, calls } = fakeMeta(0);
+    const cache = cacheWith(stored(1));
+    expect(await warmProfiles(meta, "m", cache, [{ symbol: "CAL", name: "CalBank" }, { symbol: "GCB", name: "GCB" }])).toEqual({ refreshed: 1, failed: 0 });
+    expect(calls()).toBe(1);
   });
 });

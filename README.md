@@ -26,7 +26,7 @@ Typing, tapping and **voice notes** all work. Investors can also ask **how the m
 3. A suggestion that passes is shown with every charge and **I bought it / Why? / Not now**.
 4. Sika never places orders. **I bought it** is handled by code, not the model. It records the purchase once, at the suggested price, with a one-tap **Fix it** if the broker's price was different. That keeps the portfolio, the monthly budget and the alerts accurate.
 
-Red-teamed against attempts to break the plan's limits, injected "system" instructions, getting Sika to claim it placed an order, and forged or repeated taps. See [docs/redteam.md](docs/redteam.md).
+Red-teamed against attempts to break the plan's limits, injected "system" instructions, getting Sika to claim it placed an order, and forged or repeated taps, plus off-topic requests and jailbreaks: **14/14 attacks stopped**. See [docs/redteam.md](docs/redteam.md).
 
 **Honest prices for a thin market.** GSE order books are thin: today GCB had buyers at GHS 39.00 and sellers at GHS 45.86, a 17% gap. Sika shows buyers, sellers and last trade. It values your portfolio at what you could actually sell for, and won't suggest a trade when nobody is on the other side.
 

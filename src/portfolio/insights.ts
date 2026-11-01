@@ -1,6 +1,6 @@
 import { ghs, percent } from "../fees/engine";
 import type { SessionActivity } from "../market/activity";
-import type { CompanyProfile } from "../market/profile";
+import { trailingDividend, type CompanyProfile } from "../market/profile";
 import type { Valuation } from "./holdings";
 
 /**
@@ -11,6 +11,7 @@ export function portfolioInsights(
   valuations: Valuation[],
   profiles: Map<string, CompanyProfile | null>,
   activity: Map<string, SessionActivity | null>,
+  now = new Date(),
 ): Record<string, unknown> {
   const total = valuations.reduce((s, v) => s + v.netIfSold, 0n);
   if (valuations.length === 0 || total <= 0n) return { note: "No holdings to look at yet." };
@@ -31,9 +32,9 @@ export function portfolioInsights(
   const unknown: string[] = [];
   for (const v of valuations) {
     const d = profiles.get(v.symbol)?.dividends;
-    const perShare = d?.last12MonthsPerShareCedis ?? null;
-    if (perShare === null) {
-      if (d && d.lastPerShareCedis === 0) counted.push(`${v.symbol}: no recent dividend`);
+    const perShare = trailingDividend(profiles.get(v.symbol), now);
+    if (perShare === null || perShare === 0) {
+      if (perShare === 0 || (d && d.lastPerShareCedis === 0)) counted.push(`${v.symbol}: no recent dividend`);
       else unknown.push(v.symbol);
       continue;
     }

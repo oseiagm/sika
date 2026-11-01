@@ -3,7 +3,7 @@ import type { Mandate } from "../mandate/schema";
 import type { Holding } from "../portfolio/holdings";
 import { value } from "../portfolio/holdings";
 import { liquidity, type SessionActivity } from "./activity";
-import type { CompanyProfile } from "./profile";
+import { IMPLAUSIBLE_YIELD_BPS, trailingDividend, type CompanyProfile } from "./profile";
 import { markPrice, type Quote } from "./quotes";
 
 /** Extra facts per stock: what the company is and pays (web, cited) and how often it trades (recorded IC data). */
@@ -15,17 +15,21 @@ export interface StockExtras {
 const cedisToPesewas = (c: number) => BigInt(Math.round(c * 100));
 
 /** Market cap and dividend yield, worked out from the live price (Sika's own sums, not the web's). */
-export function valuation(q: Quote, p: CompanyProfile | null | undefined): Record<string, string> {
+export function valuation(q: Quote, p: CompanyProfile | null | undefined, now = new Date()): Record<string, string> {
   const out: Record<string, string> = {};
   if (p?.sharesOutstanding) {
     const cap = q.last * BigInt(Math.round(p.sharesOutstanding));
     out.marketCap = `about ${ghs(cap)} (${Math.round(p.sharesOutstanding).toLocaleString("en-GH")} shares × last trade ${ghs(q.last)})`;
   }
-  const dps = p?.dividends?.last12MonthsPerShareCedis ?? null;
-  if (dps && q.last > 0n) {
+  const dps = trailingDividend(p, now);
+  if (dps === 0) out.dividendYield = "none: no dividend in the last 12 months";
+  else if (dps && q.last > 0n) {
     const yieldBps = (cedisToPesewas(dps) * 10_000n) / q.last;
-    out.dividendYield = `${percent(yieldBps)} (GHS ${dps.toFixed(2)} a share over the last 12 months ÷ last trade)`;
-  }
+    out.dividendYield =
+      yieldBps > IMPLAUSIBLE_YIELD_BPS
+        ? `not shown: the web's dividend figure (GHS ${dps.toFixed(2)} a share) gives ${percent(yieldBps)}, which looks wrong; check the company's latest dividend notice`
+        : `${percent(yieldBps)} (GHS ${dps.toFixed(2)} a share over the last 12 months ÷ last trade)`;
+  } else if (p?.dividends?.last12MonthsPerShareCedis) out.dividendYield = "not shown: the web's 12-month dividend figure isn't recent enough to trust";
   if (p?.peRatio) out.peRatio = `${p.peRatio.toFixed(1)} (as reported)`;
   return out;
 }

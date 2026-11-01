@@ -10,6 +10,7 @@ export type MenuAction =
   | "alerts"
   | "profile"
   | "settings"
+  | "market"
   | "language"
   | "help"
   | "reset"
@@ -61,10 +62,11 @@ export const COMMANDS = [
   ...MENU.map((m) => ({ command_name: m.command, command_description: m.commandHint })),
   { command_name: "follow", command_description: "Follow a stock for news, e.g. /follow GCB" },
   { command_name: "language", command_description: "Choose the language Sika uses" },
+  { command_name: "market", command_description: "How the GSE is doing today" },
   { command_name: "profile", command_description: "See or retake your investor profile" },
 ];
 
-export const ICE_BREAKERS = ["Get started", "Show my portfolio", "Invest this month's money", "What is MTN trading at?"];
+export const ICE_BREAKERS = ["Get started", "How's the GSE today?", "Compare MTN and GCB", "What is MTN trading at?"];
 
 /** A menu tap, "menu"/"home", a slash shortcut, or a number right after the menu → what to do. */
 export function menuAction(input: { text?: string; buttonId?: string }, menuJustShown: boolean, ready: boolean): MenuAction | "menu" | null {
@@ -74,6 +76,7 @@ export function menuAction(input: { text?: string; buttonId?: string }, menuJust
   if (["menu", "/menu", "home", "options", "help me", "main menu"].includes(text)) return "menu";
   if (text === "/mandate") return "mandate";
   if (text === "/language") return "language";
+  if (text === "/market") return "market";
   if (text === "/profile") return "profile";
   if (text.startsWith("/")) return [...MENU, ...SETUP_MENU].find((m) => `/${m.command}` === text)?.action ?? null;
   if (menuJustShown && /^\d{1,2}$/.test(text)) return items[Number(text) - 1]?.action ?? null;

@@ -108,7 +108,12 @@ Some things you can ask:
 - "What would it cost to sell 100 MTNGH?"
 - "Show my portfolio"
 - "Any recent news on MTN Ghana?" Sika searches the web and ends with links to its sources. It only shows links the search actually returned.
-- "Compare MTN and GCB for 500 cedis": buyers, sellers, the gap between them, how each fits your plan, and what 500 cedis buys in each. Sika lays out the trade-offs but doesn't pick for you.
+- "How's the market today?": the biggest risers and fallers, the most traded stocks, and how many rose or fell.
+- "Tell me about GCB": what the company does and its sector, size (market cap), dividends and dividend yield, P/E, latest results, recent news, and how easily it trades.
+- "Compare MTN and GCB for 500 cedis": all of the above side by side, plus how each fits your plan, what 500 cedis buys in each, and whether that amount fills at the best price. Sika lays out the trade-offs but doesn't pick for you.
+- "How diversified am I?", or tap **Insights** on your portfolio: your sector mix, your largest holding's share, the dividends your shares paid over the last 12 months, and any holding that rarely trades (and could be hard to sell).
+
+**Where the facts come from.** Prices, trading and order books are exact, from IC Securities. Company facts (sector, dividends, results, news) come from the web: Sika says so, gives the date and links the sources. Market cap and dividend yield are Sika's own sums from those figures and today's price.
 - "follow CAL" / "unfollow CAL": Sika messages you when there's important news on a stock (see section 7)
 
 **Sika sticks to GSE investing.** It won't answer questions about other topics or other markets (crypto, forex, foreign stocks), write essays or code, or change its rules because a message asks it to. You'll get a short reply saying what it can help with.
@@ -218,7 +223,7 @@ Send **menu** at any time, or tap the **Menu** button under Sika's messages. Dur
 | How Sika works | A quick guide |
 | Start over | Deletes your profile, plan, holdings and history. **Sika asks you to confirm first** |
 
-**Shortcuts for regular users:** right after the menu appears you can reply with its number (e.g. **2** for your portfolio). You can also type shortcuts like **/portfolio**, **/invest**, **/plan** or **/follow GCB**; some WhatsApp versions show them as a list when you type **/**. You never need these: everything is also a button.
+**Shortcuts for regular users:** right after the menu appears you can reply with its number (e.g. **2** for your portfolio). You can also type shortcuts like **/portfolio**, **/invest**, **/plan**, **/market** or **/follow GCB**; some WhatsApp versions show them as a list when you type **/**. You never need these: everything is also a button.
 
 ## 9. Privacy
 

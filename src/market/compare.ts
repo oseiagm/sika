@@ -2,7 +2,33 @@ import { charges, ghs, maxSharesFor, percent } from "../fees/engine";
 import type { Mandate } from "../mandate/schema";
 import type { Holding } from "../portfolio/holdings";
 import { value } from "../portfolio/holdings";
+import { liquidity, type SessionActivity } from "./activity";
+import type { CompanyProfile } from "./profile";
 import { markPrice, type Quote } from "./quotes";
+
+/** Extra facts per stock: what the company is and pays (web, cited) and how often it trades (recorded IC data). */
+export interface StockExtras {
+  profile?: CompanyProfile | null;
+  activity?: SessionActivity | null;
+}
+
+const cedisToPesewas = (c: number) => BigInt(Math.round(c * 100));
+
+/** Market cap and dividend yield, worked out from the live price (Sika's own sums, not the web's). */
+export function valuation(q: Quote, p: CompanyProfile | null | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (p?.sharesOutstanding) {
+    const cap = q.last * BigInt(Math.round(p.sharesOutstanding));
+    out.marketCap = `about ${ghs(cap)} (${Math.round(p.sharesOutstanding).toLocaleString("en-GH")} shares × last trade ${ghs(q.last)})`;
+  }
+  const dps = p?.dividends?.last12MonthsPerShareCedis ?? null;
+  if (dps && q.last > 0n) {
+    const yieldBps = (cedisToPesewas(dps) * 10_000n) / q.last;
+    out.dividendYield = `${percent(yieldBps)} (GHS ${dps.toFixed(2)} a share over the last 12 months ÷ last trade)`;
+  }
+  if (p?.peRatio) out.peRatio = `${p.peRatio.toFixed(1)} (as reported)`;
+  return out;
+}
 
 /** Spreads wider than this (as a share of the ask) are flagged: buying and selling straight back loses that much. */
 export const WIDE_SPREAD_BPS = 500n;
@@ -38,6 +64,7 @@ export function compareStocks(
   holdings: Holding[],
   mandate: Mandate | null,
   amount: bigint | null,
+  extras: Map<string, StockExtras> = new Map(),
 ): unknown[] {
   return symbols.map((raw) => {
     const symbol = raw.toUpperCase();
@@ -68,9 +95,33 @@ export function compareStocks(
       holding = { shares: held.shares.toString(), cost: ghs(v.cost), netIfSoldNow: ghs(v.netIfSold), profitAfterFees: `${ghs(v.profit < 0n ? -v.profit : v.profit)} ${v.profit < 0n ? "loss" : "gain"} (${signed(v.profitBps)})` };
     }
 
+    const x = extras.get(symbol);
+    const p = x?.profile;
+    const about = p
+      ? {
+          ...(p.sector ? { sector: p.sector } : {}),
+          ...(p.industry ? { industry: p.industry } : {}),
+          ...(p.business ? { business: p.business } : {}),
+        }
+      : null;
+    const dividends = p?.dividends
+      ? {
+          ...(p.dividends.lastPerShareCedis ? { last: `GHS ${p.dividends.lastPerShareCedis.toFixed(2)} a share${p.dividends.lastPaid ? ` (${p.dividends.lastPaid})` : ""}` } : {}),
+          ...(p.dividends.note ? { note: p.dividends.note } : {}),
+        }
+      : null;
+    const val = valuation(q, p);
+
     return {
       symbol,
       name: q.name,
+      ...(about && Object.keys(about).length ? { about } : {}),
+      ...(Object.keys(val).length ? { valuation: val } : {}),
+      ...(dividends && Object.keys(dividends).length ? { dividends } : {}),
+      ...(p?.latestResults?.summary ? { latestResults: `${p.latestResults.period ? `${p.latestResults.period}: ` : ""}${p.latestResults.summary}` } : {}),
+      ...(p?.recentNews?.length ? { recentNews: p.recentNews.map((n) => `${n.title}${n.date ? ` (${n.date})` : ""}: ${n.url}`) } : {}),
+      liquidity: liquidity(q, x?.activity ?? null, amount),
+      ...(p ? { companyFactsFrom: `the web, as of ${p.fetchedAt.slice(0, 10)}: ${p.sources.map((s) => s.url).join(" ") || "sources not given"}` } : {}),
       bestBid: q.bid !== null ? ghs(q.bid) : "no buyers",
       bestAsk: q.ask !== null ? ghs(q.ask) : "no sellers",
       lastTrade: ghs(q.last),

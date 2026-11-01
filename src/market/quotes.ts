@@ -21,6 +21,11 @@ export interface Quote {
   askVolume: number | null;
   /** Shares traded today. */
   volume: number;
+  /** Number of trades today, and their total value in pesewas (from IC's snapshot; absent in old recordings). */
+  trades?: number;
+  valueTraded?: bigint;
+  /** The live order book's top levels (best first), once read. */
+  levels?: { bid: bigint | null; bidVolume: number; ask: bigint | null; askVolume: number }[];
   /** IC's own label for the snapshot: LIVE, DELAYED, STALE or OFFLINE. */
   quality: string;
   /** True once the bid/ask came from the live order book rather than the snapshot. */
@@ -40,6 +45,8 @@ interface IcInstrument {
   buyPrice: number;
   sellPrice: number;
   totalVolume: number;
+  totalTrades?: number;
+  valueTraded?: number;
   dataQuality: string;
   isTradable: boolean;
   isHalted: boolean;
@@ -75,6 +82,8 @@ export function parseIcFeed(body: unknown): Quote[] {
         bidVolume: null,
         askVolume: null,
         volume: i.totalVolume,
+        ...(typeof i.totalTrades === "number" ? { trades: i.totalTrades } : {}),
+        ...(typeof i.valueTraded === "number" && i.valueTraded >= 0 ? { valueTraded: price(i.valueTraded, "valueTraded", i.symbol) } : {}),
         quality: i.dataQuality,
         live: false,
         tradable: i.isTradable && !i.isHalted,
@@ -119,7 +128,12 @@ export function applyDepth(q: Quote, depth: IcDepth): Quote {
   if (!top) return { ...q, bid: null, ask: null, bidVolume: 0, askVolume: 0, live: true };
   const bid = optional(top.bidPrice, "bidPrice", q.symbol);
   const ask = optional(top.askPrice, "askPrice", q.symbol);
-  return { ...q, bid, ask, bidVolume: bid ? top.bidVolume : 0, askVolume: ask ? top.askVolume : 0, live: true };
+  const levels = depth.entries.map((e) => {
+    const b = optional(e.bidPrice, "bidPrice", q.symbol);
+    const a = optional(e.askPrice, "askPrice", q.symbol);
+    return { bid: b, bidVolume: b ? e.bidVolume : 0, ask: a, askVolume: a ? e.askVolume : 0 };
+  });
+  return { ...q, bid, ask, bidVolume: bid ? top.bidVolume : 0, askVolume: ask ? top.askVolume : 0, levels, live: true };
 }
 
 /** Refreshes one stock's bid and ask from IC's live order book. Keeps the snapshot if the book can't be read. */

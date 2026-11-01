@@ -9,6 +9,7 @@ import type { Holding, HoldingInput } from "./portfolio/holdings";
 import type { NewsItem } from "./news/search";
 import { isLang, isVoiceReplies, type Lang, type VoiceReplies } from "./i18n/languages";
 import type { TranslationCache } from "./i18n/translate";
+import type { ProfileCache } from "./market/profile";
 
 export interface PendingUpdate {
   id: string;
@@ -474,6 +475,27 @@ export class Db {
       this.d1.prepare("INSERT INTO market_tape (snapshot_json, depth_json) VALUES (?, ?)").bind(JSON.stringify(snapshot), JSON.stringify(depth)),
       this.d1.prepare("DELETE FROM market_tape WHERE id NOT IN (SELECT id FROM market_tape ORDER BY id DESC LIMIT 60)"),
     ]);
+  }
+
+  /** The recorded snapshots (about five sessions), oldest first, for how often each stock really trades. */
+  async recentTapes(): Promise<{ at: string; snapshot: unknown }[]> {
+    const { results } = await this.d1.prepare("SELECT at, snapshot_json FROM market_tape ORDER BY id").all<{ at: string; snapshot_json: string }>();
+    return results.map((r) => ({ at: r.at, snapshot: JSON.parse(r.snapshot_json) }));
+  }
+
+  /** Company facts from the web, shared by everyone. */
+  profiles(): ProfileCache {
+    return {
+      get: async (symbol) => {
+        const r = await this.d1.prepare("SELECT json, fetched_at FROM company_profiles WHERE symbol = ?").bind(symbol).first<{ json: string; fetched_at: string }>();
+        return r ? { json: r.json, fetchedAt: r.fetched_at.replace(" ", "T") + "Z" } : null;
+      },
+      put: async (symbol, json) =>
+        void (await this.d1
+          .prepare("INSERT INTO company_profiles (symbol, json) VALUES (?, ?) ON CONFLICT (symbol) DO UPDATE SET json = excluded.json, fetched_at = datetime('now')")
+          .bind(symbol, json)
+          .run()),
+    };
   }
 
   async latestTape(): Promise<Tape | null> {

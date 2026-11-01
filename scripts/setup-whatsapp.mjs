@@ -30,11 +30,12 @@ const commands = [
   ["alerts", "See the prices that trigger your alerts"],
   ["settings", "Language, voice replies and your investor profile"],
   ["language", "Choose the language Sika uses"],
+  ["market", "How the GSE is doing today"],
   ["profile", "See or retake your investor profile (five quick questions)"],
   ["help", "How Sika works"],
   ["reset", "Delete everything and start over (asks first)"],
 ].map(([command_name, command_description]) => ({ command_name, command_description }));
-const prompts = ["Get started", "Show my portfolio", "Invest this month's money", "What is MTN trading at?"];
+const prompts = ["Get started", "How's the GSE today?", "Compare MTN and GCB", "What is MTN trading at?"];
 
 console.log("conversational automation:", await call("POST", `${phone}/conversational_automation`, { commands, prompts, enable_welcome_message: false }));
 

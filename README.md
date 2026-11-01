@@ -12,7 +12,7 @@ In Ghana, people invest through brokers and talk on WhatsApp. Sika is the knowle
 
 **It answers the way you ask.** Write or speak to Sika in English, Pidgin, Twi, Fante, Ga, Ewe, Hausa or Dagbani and it answers in that language, with no settings to find first. A first "Maakye" gets a Twi welcome; a first question gets answered before any setup. Send a voice note and Sika replies with one too, plus the text with the exact numbers.
 
-Typing, tapping and **voice notes** all work. Investors can also **compare stocks** side by side, get **news with links to the sources**, and **follow stocks**: Sika messages them when there's important news.
+Typing, tapping and **voice notes** all work. Investors can also ask **how the market is doing today**, get a **deep dive on one stock**, **compare stocks** side by side, see **portfolio insights** (sector mix, dividends, holdings that rarely trade), get **news with links to the sources**, and **follow stocks**: Sika messages them when there's important news.
 
 **It stays on topic.** Sika only talks about investing on the GSE. Off-topic questions (other markets, homework, poems) and attempts to change its rules get a fixed reply from code, so the model never answers them.
 
@@ -31,6 +31,15 @@ Red-teamed against attempts to break the plan's limits, injected "system" instru
 **Honest prices for a thin market.** GSE order books are thin: today GCB had buyers at GHS 39.00 and sellers at GHS 45.86, a 17% gap. Sika shows buyers, sellers and last trade. It values your portfolio at what you could actually sell for, and won't suggest a trade when nobody is on the other side.
 
 **Exact charges.** The fee engine is written from scratch from IC Securities' published GSE schedule: tiered all-in rates of 2.50%, 2.25%, 2.00% and 1.75%, with the statutory levies inside them. Each charge line is rounded on its own. Break-even and target prices are found by scanning price ticks, because net proceeds aren't monotonic at the tier edges.
+
+**More than prices.** IC's market data only has prices and trading, so comparisons and deep dives combine two kinds of facts, and say which is which:
+- **Exact, from IC:**
+  - spread, trades and value traded today
+  - how often the stock traded in the sessions Sika recorded
+  - order-book depth, and whether the investor's amount fills at the best price
+- **From the web, with sources and a date:** sector, what the company does, shares outstanding, dividends, P/E, latest results and recent news. Muse Spark finds these with `web_search`, and they're cached for a day.
+
+Sika works out market cap and dividend yield itself, from the published figures and the live price.
 
 **Every decision is visible.** Each investor has a private activity page showing every suggestion as a chain: the AI's reasoning, the order book it was priced from, each plan check (or what it broke), and what the investor did. It also shows the AI cost.
 
@@ -95,7 +104,8 @@ Everything runs on Cloudflare's free tier: Workers, Queues, D1 and Cron Triggers
 | Languages: routing, translation with fact checks, the localising sender | `src/i18n/` |
 | Alerts and monthly reminder | `src/alerts/` |
 | Topic guardrail (keyword fast path, then a small classifier) | `src/agent/scope.ts` |
-| Stock comparison | `src/market/compare.ts` |
+| Stock comparison, liquidity, company facts, market overview | `src/market/compare.ts`, `activity.ts`, `profile.ts`, `overview.ts` |
+| Portfolio insights (sector mix, dividends, hard-to-sell holdings) | `src/portfolio/insights.ts` |
 | News search with sources, follows and news alerts | `src/news/` |
 | Web try-it page and activity pages | `src/web/` |
 

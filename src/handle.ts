@@ -116,6 +116,7 @@ const WELCOME = (name: string | null) =>
 const AGENT_PROMPTS: Partial<Record<MenuAction, string>> = {
   invest: "I'd like to invest this month's amount. Please suggest a trade that fits my plan.",
   news: "Any recent news on the stocks I hold, follow or like? Also remind me which stocks I'm following for news.",
+  market: "How is the GSE doing today?",
 };
 
 /** A private link to this investor's activity page (WhatsApp users only; the web page shows its own link). */
@@ -683,7 +684,7 @@ async function runMenuAction(t: Turn, action: MenuAction | "menu"): Promise<void
       return deliver(t, {
         text: portfolioCard(valueAll(await liveHoldings(t), t.quotes)) + (await activityLink(t)),
         buttons: [
-          { id: "menu:invest", title: "Invest now" },
+          { id: "portfolio:insights", title: "Insights" },
           { id: "menu:holdings", title: "Update holdings" },
           { id: "flow:menu", title: "More options" },
         ],
@@ -957,6 +958,8 @@ ${
       await saveFlow(t);
       await db.addMessage(to, "user", "Some of those holdings are wrong.");
       return deliver(t, { text: "No problem. Tell me what to change, e.g. *\"it's 250 MTN, not 200\"*." });
+    case "portfolio:insights":
+      return converse(t, "How diversified is my portfolio, and what has it paid in dividends? Use the portfolio insights.");
     case "invest:now":
       return converse(t, AGENT_PROMPTS.invest!);
     case "invest:skip":

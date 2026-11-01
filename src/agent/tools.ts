@@ -5,7 +5,11 @@ import { charges, ghs, lowestSellPrice, maxSharesFor, percent, toPesewas } from 
 import { suggest, suggestionButtons } from "../intents/service";
 import { fingerprint } from "../intents/sign";
 import { Mandate, mandateCard } from "../mandate/schema";
-import { compareStocks } from "../market/compare";
+import { sessionActivity } from "../market/activity";
+import { compareStocks, type StockExtras } from "../market/compare";
+import { marketOverview } from "../market/overview";
+import { companyProfile, type CompanyProfile } from "../market/profile";
+import { portfolioInsights } from "../portfolio/insights";
 import { refreshLive, withLiveBook, type Quote } from "../market/quotes";
 import { searchNews } from "../news/search";
 import { holdingsDraftCard, portfolioCard, valueAll } from "../portfolio/format";
@@ -47,10 +51,18 @@ const Args = {
     cashCedis: optional(z.coerce.number().positive()).describe("BUY only: spend up to this much, charges included; Sika finds the most shares it buys"),
     priceCedis: optional(z.coerce.number().positive()).describe("Price per share; leave out for the last traded price"),
   }),
-  get_portfolio: z.object({}),
+  get_portfolio: z.object({
+    insights: z.boolean().default(false).describe("Also show sector mix, the largest holding's share, dividends over the last 12 months and holdings that rarely trade (looks up company facts; slower the first time each day)"),
+  }),
+  market_overview: z.object({}),
+  stock_details: z.object({
+    symbol: z.string(),
+    amountCedis: optional(z.coerce.number().positive()).describe("Optional: what this amount buys, and whether it fills at the best price"),
+  }),
   compare_stocks: z.object({
     symbols: z.array(z.string()).min(2).max(4),
     amountCedis: optional(z.coerce.number().positive()).describe("Optional: what this amount (charges included) buys in each stock"),
+    companyFacts: z.boolean().default(true).describe("Also look up sector, size, dividends, results and recent news (slower the first time each day). Set false for a quick price-only comparison"),
   }),
   search_news: z.object({ query: z.string().min(3).max(200) }),
   follow_stock: z.object({ symbol: z.string() }),
@@ -72,9 +84,14 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   get_quotes: "GSE prices from IC Securities: best bid (what a seller gets), best ask (what a buyer pays), last trade, previous close, shares traded today. Always use this; never guess a price.",
   fee_preview:
     "Exact IC Securities charges for a buy or sell, to the pesewa, with the fee tier. For a BUY, also the break-even sell price. Give shares, or cashCedis to find how many shares that buys.",
-  get_portfolio: "The user's saved holdings valued at the last price after sell charges, with break-even prices.",
+  get_portfolio:
+    "The user's saved holdings valued at the best buyer's price after sell charges, with break-even prices. With insights: how diversified they are (sector mix, largest holding), dividends over the last 12 months, and holdings that may be hard to sell.",
+  market_overview:
+    "The whole GSE today from IC's snapshot: biggest gainers and losers (among stocks that traded), most traded by value, how many rose or fell, and total value traded. Use for 'how's the market?' questions.",
+  stock_details:
+    "Everything about one GSE stock: price, spread and liquidity (exact, from IC), plus sector, what the company does, market cap and dividend yield (computed from the live price), dividends, P/E, latest results and recent news (from the web, with sources), and how it fits the investor's plan. Use for 'tell me about X' questions.",
   compare_stocks:
-    "Compare 2-4 GSE stocks side by side from the live order books: bid, ask, last trade, change today, spread, shares traded, how each fits the investor's plan (never-buy list, preferred, room under the per-stock limit), their holding if any, and optionally what an amount buys in each. For company fundamentals or recent events, also call search_news and cite its sources. Lay out the trade-offs; don't pick a winner for them.",
+    "Compare 2-4 GSE stocks side by side. Exact, from IC's live data: bid, ask, last trade, change today, spread, liquidity (today's trades and value, how often it traded in recent sessions, order-book depth, whether their amount fills at the best price), how each fits the investor's plan, their holding, and what an amount buys. From the web, with sources: sector, industry, what the company does, market cap and dividend yield (Sika computes both from the live price), last dividend, P/E, latest results and recent news. Lay out the trade-offs; don't pick a winner for them.",
   search_news:
     "Search the web for recent news about a GSE company or Ghana's market. Returns a summary and sources (title and url). When you share news, end with up to 3 of these sources as '• Title: url'. Never write a link that isn't in sources.",
   follow_stock: "Follow a GSE stock: Sika messages the investor when there is important news about it. Stocks they hold are watched automatically.",
@@ -162,11 +179,23 @@ const handlers: { [K in ToolName]: (args: z.infer<(typeof Args)[K]>, ctx: ToolCo
     };
   },
 
-  async get_portfolio(_args, ctx) {
+  async get_portfolio({ insights }, ctx) {
     const holdings = await ctx.db.holdings(ctx.user.waId);
     await refreshLive(ctx.quotes, holdings.map((h) => h.symbol));
     const valuations = valueAll(holdings, ctx.quotes);
+    let extra: Record<string, unknown> | undefined;
+    if (insights && valuations.length) {
+      const cache = ctx.db.profiles();
+      const [tapes, profiles] = await Promise.all([
+        ctx.db.recentTapes().catch(() => []),
+        Promise.all(valuations.map((v) => companyProfile(ctx.meta, ctx.model, cache, v.symbol, v.name).catch(() => null))),
+      ]);
+      const bySymbol = new Map<string, CompanyProfile | null>(valuations.map((v, i) => [v.symbol, profiles[i] ?? null]));
+      for (const p of profiles) for (const s of p?.sources ?? []) ctx.sources.add(s.url);
+      extra = portfolioInsights(valuations, bySymbol, new Map(valuations.map((v) => [v.symbol, sessionActivity(tapes, v.symbol)])));
+    }
     return {
+      ...(extra ? { insights: extra } : {}),
       summary: portfolioCard(valuations),
       holdings: valuations.map((v) => ({
         symbol: v.symbol,
@@ -182,12 +211,33 @@ const handlers: { [K in ToolName]: (args: z.infer<(typeof Args)[K]>, ctx: ToolCo
     };
   },
 
-  async compare_stocks({ symbols, amountCedis }, ctx) {
+  async market_overview(_args, ctx) {
+    return marketOverview(ctx.quotes.values());
+  },
+
+  async stock_details({ symbol, amountCedis }, ctx) {
+    const q = quoteFor(ctx, symbol);
+    const [one] = (await handlers.compare_stocks({ symbols: [q.symbol], amountCedis, companyFacts: true }, ctx)) as unknown[];
+    return one;
+  },
+
+  async compare_stocks({ symbols, amountCedis, companyFacts }, ctx) {
     const holdings = await ctx.db.holdings(ctx.user.waId);
-    const wanted = [...new Set([...symbols.map((s) => s.toUpperCase()), ...holdings.map((h) => h.symbol)])].filter((s) => ctx.quotes.has(s));
-    await refreshLive(ctx.quotes, wanted);
+    const asked = [...new Set(symbols.map((s) => s.toUpperCase()))].filter((s) => ctx.quotes.has(s));
+    const wanted = [...new Set([...asked, ...holdings.map((h) => h.symbol)])];
+    const cache = ctx.db.profiles();
+    const [, tapes, profiles] = await Promise.all([
+      refreshLive(ctx.quotes, wanted),
+      ctx.db.recentTapes().catch(() => []),
+      companyFacts
+        ? Promise.all(asked.map((s) => companyProfile(ctx.meta, ctx.model, cache, s, ctx.quotes.get(s)!.name).catch(() => null)))
+        : Promise.resolve(asked.map(() => null)),
+    ]);
+    const extras = new Map<string, StockExtras>(asked.map((s, i) => [s, { profile: profiles[i], activity: sessionActivity(tapes, s) }]));
+    // News and fact links the comparison returns may be shown to the investor.
+    for (const p of profiles) for (const u of [...(p?.sources ?? []).map((x) => x.url), ...(p?.recentNews ?? []).map((n) => n.url)]) ctx.sources.add(u);
     const mandate = ctx.user.mandateConfirmed ? ctx.user.mandate : null;
-    return compareStocks(symbols, ctx.quotes, holdings, mandate, amountCedis != null ? cedisToPesewas(amountCedis) : null);
+    return compareStocks(symbols, ctx.quotes, holdings, mandate, amountCedis != null ? cedisToPesewas(amountCedis) : null, extras);
   },
 
   async search_news({ query }, ctx) {

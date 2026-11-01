@@ -49,7 +49,8 @@ Sika works out market cap and dividend yield itself, from the published figures 
 |---|---|
 | **Muse Spark 1.3** (Meta Model API) | The agent: a tool-calling loop over live quotes, exact fee previews, stock comparisons, the portfolio and trade suggestions. It also turns free-text answers into structured choices ("about 750 a month", "MTN and the banks, never oil companies"), answers side questions mid-setup, searches the web for news with `web_search` and cited sources, and classifies off-topic messages |
 | **Muse Voice Transcribe** | Voice notes → text. WhatsApp notes arrive as Ogg Opus; Sika decodes them to 16 kHz WAV inside the Worker with a WebAssembly Opus decoder, with GSE names as recognition keywords. On the web page, tap the mic: the browser records the note and converts it to the same 16 kHz WAV before sending it |
-| **Khaya (GhanaNLP)** | Not a Meta model, but what makes the Ghanaian languages work: translation, voice-note transcription and text-to-speech for Twi, Fante, Ga, Ewe and Dagbani, plus speech for Hausa and Pidgin |
+| **Khaya (GhanaNLP)** | Not a Meta model, but what makes the Ghanaian languages work: translation, voice-note transcription and a female text-to-speech voice for Twi, Fante, Ga, Ewe, Hausa and Dagbani. Never used for English |
+| **Deepgram Aura-2** (Cloudflare Workers AI) | The natural female voice (`luna`) for English and Pidgin voice replies |
 | **Muse Image** | When an investor records their first purchase, a personalised "first step" postcard: their goal in a Ghanaian setting, with the real purchase written on it |
 
 ## Try it
@@ -89,7 +90,7 @@ Everything runs on Cloudflare's free tier: Workers, Queues, D1 and Cron Triggers
 - **Messages in:** what the investor types or says is translated to English before the topic guardrail, the setup flows and the agent see it. Plan checks, the guardrail and the audit trail therefore work the same in every language.
 - **Messages out:** Sika's replies are translated line by line on the way out, with a shared D1 cache, so each fixed message and button is translated once.
 - **Exact numbers:** lines that are just figures (charges, totals) stay as they are. Any translated line that changes an amount, ticker or link is sent in English instead, because Khaya once turned "MTNGH" into "MTH".
-- **Voice replies:** when a voice note comes in, Sika also answers with one. Muse Spark writes the gist (never the full card), Khaya translates and speaks it, and the Worker encodes it to mono Ogg Opus with WebAssembly libopus, from `@evan/opus`, MIT. WhatsApp only shows the voice-note bubble for that format.
+- **Voice replies:** when a voice note comes in, Sika also answers with one. Muse Spark writes the gist (never the full card). English and Pidgin are spoken by Deepgram Aura-2's female voice `luna` on Workers AI (set `VOICE_EN` to choose another female voice). Ghanaian languages are translated, then spoken by Khaya's female voice. The Worker encodes the reply to mono Ogg Opus with WebAssembly libopus, from `@evan/opus` (MIT), because WhatsApp only shows the voice-note bubble for that format.
 - **Routing:** English and Pidgin voice notes go to Muse Voice Transcribe, the others to Khaya. Pidgin and Hausa text is translated by Muse Spark, the rest by Khaya.
 
 | Area | Code |

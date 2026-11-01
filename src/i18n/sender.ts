@@ -1,8 +1,8 @@
 import type OpenAI from "openai";
 import type { Db } from "../db";
 import type { Sender } from "../handle";
-import { khayaSpeak } from "./khaya";
-import { languageOf, wantsVoice, type Lang, type VoiceReplies } from "./languages";
+import { canSpeak, speak, type SpeechDeps } from "../voice/speak";
+import { wantsVoice, type Lang, type VoiceReplies } from "./languages";
 import { fromEnglish, label, type TranslateDeps } from "./translate";
 
 /** WhatsApp's limits for interactive labels. */
@@ -29,6 +29,8 @@ export interface LocalizeDeps {
   meta: Pick<OpenAI, "chat">;
   model: string;
   khayaKey?: string;
+  /** Text-to-speech for voice replies (Aura-2 for English and Pidgin, Khaya for the rest). */
+  speech?: SpeechDeps;
 }
 
 /** Spark turns the turn's messages into what a person would say in a voice note: the gist, not the card. */
@@ -100,12 +102,12 @@ export function localize(base: Sender, d: LocalizeDeps, prefsOf: (to: string) =>
       const lines = said.get(to) ?? [];
       said.delete(to);
       const p = await get(to);
-      if (!lines.length || !wantsVoice(p.voiceReplies, spoke) || !d.khayaKey) return;
+      if (!lines.length || !wantsVoice(p.voiceReplies, spoke) || !d.speech || !canSpeak(d.speech, p.lang)) return;
       try {
         const script = await spokenScript(d, lines);
         if (!script) return;
         const spoken = p.lang === "en" ? script : (await fromEnglish(tdeps, script, p.lang)).text;
-        const wav = await khayaSpeak(d.khayaKey, spoken, languageOf(p.lang).tts);
+        const wav = await speak(d.speech, spoken, p.lang);
         await base.voice(to, wav);
         await d.db.audit(to, "voice_reply", { lang: p.lang, script, spoken });
       } catch (err) {

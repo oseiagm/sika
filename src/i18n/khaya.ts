@@ -35,8 +35,8 @@ export async function khayaTranscribe(key: string, wav: Uint8Array, language: st
 }
 
 /** Text → speech, as a WAV file. */
-export async function khayaSpeak(key: string, text: string, language: string): Promise<Uint8Array> {
-  const res = await call(key, "/tts/v1/tts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text, language }) });
+export async function khayaSpeak(key: string, text: string, language: string, speaker?: "female" | "male_low" | "male_high"): Promise<Uint8Array> {
+  const res = await call(key, "/tts/v1/tts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text, language, ...(speaker ? { speaker_id: speaker } : {}) }) });
   const bytes = new Uint8Array(await res.arrayBuffer());
   if (String.fromCharCode(...bytes.subarray(0, 4)) !== "RIFF") throw new KhayaError("Khaya TTS: not a WAV");
   return bytes;

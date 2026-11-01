@@ -27,9 +27,10 @@ afterEach(() => vi.unstubAllGlobals());
 describe("languages", () => {
   it("routes each language to the right services", () => {
     expect(LANGUAGES.map((l) => l.code)).toEqual(["en", "pcm", "tw", "fat", "gaa", "ee", "ha", "dag"]);
-    expect(languageOf("tw")).toMatchObject({ asr: { by: "khaya", code: "twi" }, translate: { by: "khaya", code: "tw" }, tts: "twi" });
-    expect(languageOf("ee")).toMatchObject({ asr: { code: "ewe" }, translate: { code: "ee" }, tts: "ewe" });
-    expect(languageOf("pcm")).toMatchObject({ asr: { by: "muse" }, translate: { by: "spark" } });
+    expect(languageOf("tw")).toMatchObject({ asr: { by: "khaya", code: "twi" }, translate: { by: "khaya", code: "tw" }, tts: { by: "khaya", code: "twi" } });
+    expect(languageOf("ee")).toMatchObject({ asr: { code: "ewe" }, translate: { code: "ee" }, tts: { by: "khaya", code: "ewe" } });
+    expect(languageOf("pcm")).toMatchObject({ asr: { by: "muse" }, translate: { by: "spark" }, tts: { by: "aura" } });
+    expect(languageOf("en").tts).toEqual({ by: "aura" });
     expect(languageOf("ha").translate).toEqual({ by: "spark" });
     expect(languageOf(null).code).toBe("en");
     expect(languageOf("xx").code).toBe("en");

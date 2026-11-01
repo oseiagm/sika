@@ -36,6 +36,10 @@ export interface Env {
   DEV_CHAT?: string;
   /** Khaya (GhanaNLP) key: Ghanaian-language translation, voice notes and voice replies. Unset: English only, no voice replies. */
   KHAYA_API_KEY?: string;
+  /** Workers AI: Deepgram Aura-2 for English and Pidgin voice replies. */
+  AI?: Ai;
+  /** Aura-2 voice for English and Pidgin replies (female: luna, asteria, athena, thalia, helena, hera, aurora). Default luna. */
+  VOICE_EN?: string;
   INBOX: Queue<Inbound>;
 }
 

@@ -85,7 +85,11 @@ export function whatsappSender(env: Env): Sender {
 
 /** A sender that speaks each investor's language (see src/i18n/sender.ts). Used for chats and the scheduled jobs. */
 export function localizedSender(env: Env, base: Sender, db: Db = new Db(env.DB)): LocalizedSender {
-  return localize(base, { db, meta: metaClient(env.MODEL_API_KEY), model: env.META_MODEL, khayaKey: env.KHAYA_API_KEY }, (to) => db.langOf(to));
+  return localize(
+    base,
+    { db, meta: metaClient(env.MODEL_API_KEY), model: env.META_MODEL, khayaKey: env.KHAYA_API_KEY, speech: { ai: env.AI, khayaKey: env.KHAYA_API_KEY, englishVoice: env.VOICE_EN } },
+    (to) => db.langOf(to),
+  );
 }
 
 const HOW_IT_WORKS = [
@@ -1002,8 +1006,9 @@ async function hear(t: Turn, message: Inbound): Promise<string | null> {
     }
     wav = await oggOpusToWav(bytes);
   }
-  // Listen in the language they've been using. Someone new, or using English or Pidgin, is heard by Muse
-  // first; if that doesn't sound like English or Pidgin, Khaya tries Twi, Ghana's most spoken language.
+  // Listen in the language they've been using. English and Pidgin are always Muse's: Khaya isn't used for
+  // English. Only when Muse hears nothing, or what it heard is clearly a Ghanaian language, does Khaya
+  // try Twi, Ghana's most spoken language.
   const lang = languageOf(t.user.lang);
   const key = t.env.KHAYA_API_KEY;
   const muse = () => transcribe(t.env.MODEL_API_KEY, wav).catch(() => "");
@@ -1017,7 +1022,9 @@ async function hear(t: Turn, message: Inbound): Promise<string | null> {
   } else {
     transcript = await muse();
     by = "muse";
-    if (key && (!transcript || (!clearlyEnglish(transcript) && (await detectLanguage(metaClient(t.env.MODEL_API_KEY), t.env.META_MODEL, transcript)) !== lang.code))) {
+    const heardAs = transcript && !clearlyEnglish(transcript) ? await detectLanguage(metaClient(t.env.MODEL_API_KEY), t.env.META_MODEL, transcript) : "en";
+    const ghanaian = heardAs !== null && heardAs !== "en" && heardAs !== "pcm";
+    if (key && (!transcript || ghanaian)) {
       const twi = await khaya("twi");
       if (twi) [transcript, by] = [twi, "khaya:twi"];
     }

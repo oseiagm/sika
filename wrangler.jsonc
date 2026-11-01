@@ -6,6 +6,8 @@
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
   "alias": { "@eshaz/web-worker": "./src/voice/no-web-worker.ts" },
+  // Workers AI: Deepgram Aura-2 voices for English and Pidgin voice replies.
+  "ai": { "binding": "AI" },
   "d1_databases": [
     { "binding": "DB", "database_name": "sika", "database_id": "0303a7a7-39ec-4f98-8709-ea317f274dff", "migrations_dir": "migrations" }
   ],

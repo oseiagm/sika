@@ -16,19 +16,19 @@ export interface Language {
   asr: { by: "muse" } | { by: "khaya"; code: string };
   /** Translation to and from English: none, Khaya with this pair code, or Muse Spark. */
   translate: { by: "none" } | { by: "khaya"; code: string } | { by: "spark" };
-  /** Khaya text-to-speech language code. */
-  tts: string;
+  /** Voice replies: Deepgram Aura-2 (Workers AI) for English and Pidgin, Khaya with this code for the rest. */
+  tts: { by: "aura" } | { by: "khaya"; code: string };
 }
 
 export const LANGUAGES: Language[] = [
-  { code: "en", endonym: "English", english: "English", asr: { by: "muse" }, translate: { by: "none" }, tts: "eng" },
-  { code: "pcm", endonym: "Pidgin", english: "Ghanaian Pidgin English", asr: { by: "muse" }, translate: { by: "spark" }, tts: "pcm" },
-  { code: "tw", endonym: "Twi", english: "Asante Twi", asr: { by: "khaya", code: "twi" }, translate: { by: "khaya", code: "tw" }, tts: "twi" },
-  { code: "fat", endonym: "Fante", english: "Fante", asr: { by: "khaya", code: "fat" }, translate: { by: "khaya", code: "fat" }, tts: "fat" },
-  { code: "gaa", endonym: "Ga", english: "Ga", asr: { by: "khaya", code: "gaa" }, translate: { by: "khaya", code: "gaa" }, tts: "gaa" },
-  { code: "ee", endonym: "Eʋegbe", english: "Ewe", asr: { by: "khaya", code: "ewe" }, translate: { by: "khaya", code: "ee" }, tts: "ewe" },
-  { code: "ha", endonym: "Hausa", english: "Hausa", asr: { by: "khaya", code: "hau" }, translate: { by: "spark" }, tts: "hau" },
-  { code: "dag", endonym: "Dagbanli", english: "Dagbani", asr: { by: "khaya", code: "dag" }, translate: { by: "khaya", code: "dag" }, tts: "dag" },
+  { code: "en", endonym: "English", english: "English", asr: { by: "muse" }, translate: { by: "none" }, tts: { by: "aura" } },
+  { code: "pcm", endonym: "Pidgin", english: "Ghanaian Pidgin English", asr: { by: "muse" }, translate: { by: "spark" }, tts: { by: "aura" } },
+  { code: "tw", endonym: "Twi", english: "Asante Twi", asr: { by: "khaya", code: "twi" }, translate: { by: "khaya", code: "tw" }, tts: { by: "khaya", code: "twi" } },
+  { code: "fat", endonym: "Fante", english: "Fante", asr: { by: "khaya", code: "fat" }, translate: { by: "khaya", code: "fat" }, tts: { by: "khaya", code: "fat" } },
+  { code: "gaa", endonym: "Ga", english: "Ga", asr: { by: "khaya", code: "gaa" }, translate: { by: "khaya", code: "gaa" }, tts: { by: "khaya", code: "gaa" } },
+  { code: "ee", endonym: "Eʋegbe", english: "Ewe", asr: { by: "khaya", code: "ewe" }, translate: { by: "khaya", code: "ee" }, tts: { by: "khaya", code: "ewe" } },
+  { code: "ha", endonym: "Hausa", english: "Hausa", asr: { by: "khaya", code: "hau" }, translate: { by: "spark" }, tts: { by: "khaya", code: "hau" } },
+  { code: "dag", endonym: "Dagbanli", english: "Dagbani", asr: { by: "khaya", code: "dag" }, translate: { by: "khaya", code: "dag" }, tts: { by: "khaya", code: "dag" } },
 ];
 
 export const languageOf = (code: string | null | undefined): Language => LANGUAGES.find((l) => l.code === code) ?? LANGUAGES[0]!;

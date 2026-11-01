@@ -1,4 +1,4 @@
-/** The "try Sika" page: the same conversation as WhatsApp, in a phone, in the browser. */
+/** The "try Sika" page: the same conversation as WhatsApp, in the browser. */
 export const TRY_PAGE = /* html */ `<!doctype html>
 <html lang="en">
 <head>
@@ -19,7 +19,6 @@ export const TRY_PAGE = /* html */ `<!doctype html>
     --hair: #dde2dc;
     --gold: #c3922e;
     --gold-ink: #ffffff;
-    --frame: #1b1d1c;
     --screen: #ffffff;
     --chat: #efece6;
     --them: #ffffff;
@@ -32,13 +31,13 @@ export const TRY_PAGE = /* html */ `<!doctype html>
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg: #0c110e; --ink: #e8eee9; --soft: #93a39a; --hair: #222b26; --gold: #d8a948; --gold-ink: #1a1405;
-      --frame: #2a2d2c; --screen: #111814; --chat: #0f1512; --them: #1d2722; --me: #1c4a35; --tick: #53bdeb;
+      --screen: #111814; --chat: #0f1512; --them: #1d2722; --me: #1c4a35; --tick: #53bdeb;
       --action: #5fd3a2; --sheet-scrim: rgba(0, 0, 0, .55); --shadow: 0 40px 80px -30px rgba(0, 0, 0, .8);
     }
   }
   :root[data-theme="dark"] {
     --bg: #0c110e; --ink: #e8eee9; --soft: #93a39a; --hair: #222b26; --gold: #d8a948; --gold-ink: #1a1405;
-    --frame: #2a2d2c; --screen: #111814; --chat: #0f1512; --them: #1d2722; --me: #1c4a35; --tick: #53bdeb;
+    --screen: #111814; --chat: #0f1512; --them: #1d2722; --me: #1c4a35; --tick: #53bdeb;
     --action: #5fd3a2; --sheet-scrim: rgba(0, 0, 0, .55); --shadow: 0 40px 80px -30px rgba(0, 0, 0, .8);
   }
 
@@ -57,7 +56,7 @@ export const TRY_PAGE = /* html */ `<!doctype html>
   /* Page */
   .stage {
     min-height: 100%; max-width: 1180px; margin: 0 auto; padding: 40px 32px;
-    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 72px; align-items: center;
+    display: grid; grid-template-columns: minmax(0, 30rem) auto; gap: 88px; align-items: center; justify-content: center;
   }
   .intro { max-width: 30rem; }
   .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; letter-spacing: -.01em; margin-bottom: 48px; }
@@ -77,37 +76,16 @@ export const TRY_PAGE = /* html */ `<!doctype html>
   .after a { color: var(--ink); font-weight: 500; text-underline-offset: 3px; }
   .after a[hidden] { display: none; }
 
-  /* Phone */
-  /* iPhone (latest generation): thin bezel, titanium edge, small Dynamic Island. */
-  .device {
-    width: 384px; height: min(812px, calc(100vh - 80px)); min-height: 620px;
-    padding: 9px; border-radius: 60px; position: relative;
-    background: linear-gradient(145deg, #4a4a4c, #1c1c1e 38%, #2c2c2e 62%, #5a5a5c);
-    box-shadow: var(--shadow), inset 0 0 0 1px rgba(255, 255, 255, .18), inset 0 0 0 3px #0d0d0e;
+  /* The chat. On wide screens it's a plain panel beside the intro: no device mockup, so there are
+     no fake controls (status bars, window buttons, taskbars) that look clickable and do nothing,
+     and all the height goes to the conversation. On small screens it becomes the whole page. */
+  .panel {
+    position: relative; display: flex; flex-direction: column; overflow: hidden;
+    width: 440px; height: min(800px, calc(100vh - 80px)); min-height: 560px;
+    background: var(--screen); border: 1px solid var(--hair); border-radius: 20px; box-shadow: var(--shadow);
   }
-  .device::before, .device::after { content: ""; position: absolute; width: 3px; background: #3a3a3c; border-radius: 2px; }
-  .device::before { left: -2px; top: 170px; height: 56px; }
-  .device::after { right: -2px; top: 200px; height: 84px; }
-  .screen { position: relative; height: 100%; border-radius: 51px; overflow: hidden; background: var(--screen); display: flex; flex-direction: column; }
-  .island { position: absolute; top: 11px; left: 50%; transform: translateX(-50%); width: 92px; height: 27px; border-radius: 14px; background: #000; z-index: 3; }
-  .punch, .gesture { display: none; }
-  .status { display: flex; justify-content: space-between; align-items: center; padding: 14px 30px 6px 36px; font-size: 15px; font-weight: 600; height: 48px; flex: none; }
-  .status .time { width: 60px; }
 
-  /* Android (Pixel-style): squarer corners, punch-hole camera, Android status bar and gesture bar. */
-  .android .device { width: 380px; padding: 8px; border-radius: 42px; background: #1f2021; box-shadow: var(--shadow), inset 0 0 0 1px rgba(255, 255, 255, .1); }
-  .android .device::before { display: none; }
-  .android .device::after { right: -2px; top: 150px; height: 120px; background: #2b2c2d; }
-  .android .screen { border-radius: 34px; }
-  .android .island { display: none; }
-  .android .punch { display: block; position: absolute; top: 12px; left: 50%; transform: translateX(-50%); width: 13px; height: 13px; border-radius: 50%; background: #000; z-index: 3; box-shadow: 0 0 0 2px rgba(0, 0, 0, .25); }
-  .android .status { padding: 8px 22px 4px 26px; height: 36px; font-size: 13px; font-weight: 500; }
-  .android .gesture { display: block; position: absolute; bottom: 7px; left: 50%; transform: translateX(-50%); width: 104px; height: 4px; border-radius: 2px; background: var(--ink); opacity: .55; z-index: 4; }
-  .android .compose { padding-bottom: 20px; }
-  .status svg { display: block; }
-  .status .icons { display: flex; gap: 6px; align-items: center; }
-
-  .chat-head { display: flex; align-items: center; gap: 12px; padding: 6px 16px 12px; border-bottom: 1px solid var(--hair); flex: none; }
+  .chat-head { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--hair); flex: none; }
   .chat-head .mark { width: 38px; height: 38px; border-radius: 50%; font-size: 17px; }
   .chat-head .who { line-height: 1.2; flex: 1; min-width: 0; }
   .chat-head .who b { display: block; font-weight: 600; font-size: 16px; }
@@ -118,9 +96,14 @@ export const TRY_PAGE = /* html */ `<!doctype html>
     flex: 1; overflow-y: auto; padding: 14px 12px 8px; background: var(--chat);
     display: flex; flex-direction: column; gap: 6px; overscroll-behavior: contain;
   }
-  /* Phones don't show scrollbars; neither does this one (it still scrolls). */
+  /* Touch screens hide scrollbars. With a mouse, a thin one shows there's history above. */
   .log, .sheet-rows { scrollbar-width: none; }
   .log::-webkit-scrollbar, .sheet-rows::-webkit-scrollbar { display: none; }
+  @media (hover: hover) and (pointer: fine) {
+    .log, .sheet-rows { scrollbar-width: thin; scrollbar-color: var(--hair) transparent; }
+    .log::-webkit-scrollbar, .sheet-rows::-webkit-scrollbar { display: block; width: 8px; }
+    .log::-webkit-scrollbar-thumb, .sheet-rows::-webkit-scrollbar-thumb { background: var(--hair); border-radius: 4px; }
+  }
   .day { align-self: center; font-size: 12px; color: var(--soft); background: var(--screen); padding: 3px 10px; border-radius: 8px; margin: 4px 0 8px; }
   .row { display: flex; flex-direction: column; max-width: 84%; }
   .row.them { align-self: flex-start; }
@@ -152,7 +135,7 @@ export const TRY_PAGE = /* html */ `<!doctype html>
   .typing i:nth-child(2) { animation-delay: .15s; } .typing i:nth-child(3) { animation-delay: .3s; }
   @keyframes dot { 30% { opacity: 1; transform: translateY(-2px); } }
 
-  .compose { display: flex; align-items: flex-end; gap: 8px; padding: 8px 10px 26px; background: var(--screen); border-top: 1px solid var(--hair); flex: none; }
+  .compose { display: flex; align-items: flex-end; gap: 8px; padding: 8px 10px 12px; background: var(--screen); border-top: 1px solid var(--hair); flex: none; }
   .compose input {
     flex: 1; min-width: 0; border: 1px solid var(--hair); background: var(--chat); color: var(--ink);
     border-radius: 22px; padding: 10px 16px; font: inherit; font-size: 15px; outline: none;
@@ -177,7 +160,7 @@ export const TRY_PAGE = /* html */ `<!doctype html>
 
   .sheet { position: absolute; inset: 0; z-index: 5; display: flex; align-items: flex-end; background: var(--sheet-scrim); opacity: 0; pointer-events: none; transition: opacity .2s; }
   .sheet.on { opacity: 1; pointer-events: auto; }
-  .sheet-card { width: 100%; max-height: 72%; display: flex; flex-direction: column; background: var(--screen); border-radius: 22px 22px 0 0; transform: translateY(100%); transition: transform .28s cubic-bezier(.2, .8, .2, 1); padding-bottom: 22px; }
+  .sheet-card { width: 100%; max-height: 72%; display: flex; flex-direction: column; background: var(--screen); border-radius: 22px 22px 0 0; transform: translateY(100%); transition: transform .28s cubic-bezier(.2, .8, .2, 1); padding-bottom: 14px; }
   .sheet.on .sheet-card { transform: none; }
   .handle { width: 38px; height: 5px; border-radius: 3px; background: var(--hair); margin: 8px auto 4px; }
   .sheet-card h2 { margin: 6px 20px 8px; font-size: 17px; font-weight: 600; text-align: center; }
@@ -196,9 +179,7 @@ export const TRY_PAGE = /* html */ `<!doctype html>
   @media (max-width: 900px) {
     .stage { display: block; padding: 0; height: 100%; }
     .intro { display: none; }
-    .device, .android .device { width: 100%; height: 100dvh; min-height: 0; padding: 0; border-radius: 0; box-shadow: none; background: none; }
-    .device::before, .device::after, .island, .punch, .gesture, .status, .android .punch, .android .gesture, .android .status { display: none; }
-    .screen, .android .screen { border-radius: 0; }
+    .panel { width: 100%; height: 100dvh; min-height: 0; border: 0; border-radius: 0; box-shadow: none; }
     .chat-head { padding-top: max(12px, env(safe-area-inset-top)); }
     .compose { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
     .row { max-width: 88%; }
@@ -223,46 +204,33 @@ export const TRY_PAGE = /* html */ `<!doctype html>
     </div>
   </section>
 
-  <div class="device" role="region" aria-label="Chat with Sika">
-    <div class="screen">
-      <div class="island" aria-hidden="true"></div>
-      <div class="punch" aria-hidden="true"></div>
-      <div class="gesture" aria-hidden="true"></div>
-      <div class="status" aria-hidden="true">
-        <span class="time" id="clock">9:41</span>
-        <span class="icons">
-          <svg width="18" height="12" viewBox="0 0 18 12" fill="currentColor"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
-          <svg width="16" height="12" viewBox="0 0 16 12" fill="currentColor"><path d="M8 2.3c2.3 0 4.4.9 6 2.4l1.1-1.2A10.2 10.2 0 0 0 8 .6 10.2 10.2 0 0 0 .9 3.5L2 4.7a8.6 8.6 0 0 1 6-2.4Zm0 3.4c1.4 0 2.7.5 3.7 1.4l1.1-1.2A7.2 7.2 0 0 0 8 4a7.2 7.2 0 0 0-4.8 1.9l1.1 1.2c1-.9 2.3-1.4 3.7-1.4Zm0 3.3c.6 0 1.1.2 1.5.6L8 11.4 6.5 9.6c.4-.4.9-.6 1.5-.6Z"/></svg>
-          <svg width="27" height="13" viewBox="0 0 27 13" fill="none"><rect x=".5" y=".5" width="23" height="12" rx="3.5" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="18" height="9" rx="2" fill="currentColor"/><path d="M25 4.5v4c.8-.3 1.3-1.1 1.3-2s-.5-1.7-1.3-2Z" fill="currentColor" opacity=".4"/></svg>
-        </span>
-      </div>
-      <header class="chat-head">
-        <span class="mark" aria-hidden="true">S</span>
-        <div class="who"><b>Sika</b><span id="presence">online</span></div>
-        <button type="button" id="restart" title="Start a new conversation">New chat</button>
-      </header>
-      <div class="log" id="log" aria-live="polite" aria-relevant="additions"></div>
-      <form class="compose" id="compose">
-        <label class="sr" for="text">Message Sika</label>
-        <input id="text" autocomplete="off" maxlength="500" placeholder="Message">
-        <div class="recbar" id="recbar" hidden>
-          <button type="button" class="cancel" id="reccancel" aria-label="Cancel voice note">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
-          </button>
-          <span class="dot" aria-hidden="true"></span>
-          <span id="rectime" aria-live="off">0:00</span>
-          <span class="hint">Recording… tap send when done</span>
-        </div>
-        <button class="send" id="send" aria-label="Send">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+  <div class="panel" role="region" aria-label="Chat with Sika">
+    <header class="chat-head">
+      <span class="mark" aria-hidden="true">S</span>
+      <div class="who"><b>Sika</b><span id="presence">online</span></div>
+      <button type="button" id="restart" title="Start a new conversation">New chat</button>
+    </header>
+    <div class="log" id="log" aria-live="polite" aria-relevant="additions"></div>
+    <form class="compose" id="compose">
+      <label class="sr" for="text">Message Sika</label>
+      <input id="text" autocomplete="off" maxlength="500" placeholder="Message">
+      <div class="recbar" id="recbar" hidden>
+        <button type="button" class="cancel" id="reccancel" aria-label="Cancel voice note">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
         </button>
-      </form>
-      <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
-        <div class="sheet-card">
-          <div class="handle" aria-hidden="true"></div>
-          <h2 id="sheet-title">Choose</h2>
-          <div class="sheet-rows" id="sheet-rows"></div>
-        </div>
+        <span class="dot" aria-hidden="true"></span>
+        <span id="rectime" aria-live="off">0:00</span>
+        <span class="hint">Recording… press send when done</span>
+      </div>
+      <button class="send" id="send" aria-label="Send">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+      </button>
+    </form>
+    <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+      <div class="sheet-card">
+        <div class="handle" aria-hidden="true"></div>
+        <h2 id="sheet-title">Choose</h2>
+        <div class="sheet-rows" id="sheet-rows"></div>
       </div>
     </div>
   </div>
@@ -270,10 +238,6 @@ export const TRY_PAGE = /* html */ `<!doctype html>
 
 <script>
 (() => {
-  // Android visitors see an Android phone; everyone else an iPhone. ?device=android|ios overrides.
-  const forced = new URLSearchParams(location.search).get("device");
-  const android = forced ? forced === "android" : /Android/i.test(navigator.userAgent) || navigator.userAgentData?.platform === "Android";
-  document.documentElement.classList.toggle("android", android);
   const $ = (id) => document.getElementById(id);
   const log = $("log"), input = $("text"), sendBtn = $("send"), presence = $("presence");
   const store = {
@@ -582,11 +546,6 @@ export const TRY_PAGE = /* html */ `<!doctype html>
     if (a && /^\\/activity\\/[0-9a-f]{24}$/.test(a)) { $("activity").href = a; $("activity").hidden = false; }
   }
 
-  function clock() {
-    $("clock").textContent = new Date().toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit", timeZone: "Africa/Accra" });
-  }
-  clock();
-  setInterval(clock, 20000);
   start();
 })();
 </script>

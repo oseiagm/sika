@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { ghs } from "./fees/engine";
 import { checkPriceAlerts, monthlyReminder } from "./alerts/monitor";
+import { checkNews } from "./news/monitor";
 import { handle, whatsappSender } from "./handle";
 import { prepareMarket, recordTape } from "./market/replay";
 import { devSeedPage } from "./web/devSeed";
@@ -28,6 +29,10 @@ export interface Env {
   PUBLIC_BASE_URL?: string;
   /** WhatsApp Flow for adding a holding (scripts/setup-whatsapp.mjs prints it). */
   WA_HOLDING_FLOW_ID?: string;
+  /** Approved template for updates outside the 24-hour window (scripts/setup-whatsapp.mjs submits it). Unset: those updates are skipped. */
+  WA_UPDATE_TEMPLATE?: string;
+  /** The template's language code (default en). */
+  WA_TEMPLATE_LANG?: string;
   /** "1" only in local dev: enables POST /dev/chat. */
   DEV_CHAT?: string;
   INBOX: Queue<Inbound>;
@@ -64,6 +69,7 @@ app.post("/dev/chat", async (c) => {
     list: async (_to, body, _button, rows) => void replies.push({ text: body, buttons: rows.map((r) => r.id) }),
     flow: async (_to, body) => void replies.push({ text: `[form] ${body}` }),
     image: async (_to, url, caption) => void replies.push({ text: `[image] ${caption ?? ""} ${url}` }),
+    template: async (_to, name, params, payload) => void replies.push({ text: `[template ${name}] ${params.join(" · ")}`, buttons: [payload] }),
     typing: async () => {},
   });
   return c.json(replies);
@@ -81,10 +87,12 @@ app.post("/dev/cron/:job", async (c) => {
     list: async (to: string, text: string) => void sent.push({ to, text }),
     flow: async (to: string, text: string) => void sent.push({ to, text }),
     image: async (to: string, url: string) => void sent.push({ to, text: `[image] ${url}` }),
+    template: async (to: string, name: string, params: string[], payload: string) => void sent.push({ to, text: `[template ${name}] ${params.join(" · ")}`, buttons: [payload] }),
     typing: async () => {},
   };
   if (c.req.param("job") === "record") await recordTape(c.env);
   else if (c.req.param("job") === "alerts") await checkPriceAlerts(c.env, send);
+  else if (c.req.param("job") === "news") await checkNews(c.env, send);
   else await monthlyReminder(c.env, send);
   return c.json(sent);
 });
@@ -130,6 +138,7 @@ app.post("/webhook", async (c) => {
 /** Cron schedules (UTC, which is also Accra time). Keep in step with wrangler.jsonc. */
 const PRICE_ALERTS = "*/30 10-15 * * 1-5";
 const MONTHLY_REMINDER = "0 9 * * *";
+const NEWS_CHECK = "0 8,13 * * 1-5";
 
 export default {
   fetch: app.fetch,
@@ -141,6 +150,7 @@ export default {
       await checkPriceAlerts(env, send);
     }
     else if (controller.cron === MONTHLY_REMINDER) await monthlyReminder(env, send);
+    else if (controller.cron === NEWS_CHECK) await checkNews(env, send);
   },
   async queue(batch: MessageBatch<Inbound>, env: Env): Promise<void> {
     for (const msg of batch.messages) {

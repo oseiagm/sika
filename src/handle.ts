@@ -1,6 +1,8 @@
 import { metaClient } from "./agent/meta";
 import { runAgent } from "./agent/loop";
-import { alertsCard } from "./alerts/levels";
+import { checkScope, replyFor } from "./agent/scope";
+import { alertsCard, triggered } from "./alerts/levels";
+import { alertMessages } from "./alerts/monitor";
 import { PaperBroker } from "./broker/paper";
 import { firstStepCard } from "./cards/milestone";
 import { Db, type User } from "./db";
@@ -21,13 +23,14 @@ import {
 } from "./flow/plan";
 import { inferFlow, type FlowState } from "./flow/state";
 import { advance, formUi, stockUi } from "./flow/holdingForm";
+import { followCommand } from "./flow/follow";
 import { extractStocks } from "./flow/stocks";
 import { STEP, type Ui } from "./flow/ui";
 import type { Env } from "./index";
 import { approve, reject, whyCard, type Deps } from "./intents/service";
 import { fingerprint } from "./intents/sign";
 import { mandateCard } from "./mandate/schema";
-import { fetchQuotes, refreshLive, type Quote } from "./market/quotes";
+import { fetchQuotes, refreshLive, withLiveBook, type Quote } from "./market/quotes";
 import { MENU, MENU_MARKER, menuAction, SETUP_MENU, type MenuAction } from "./menu";
 import { holdingsDraftCard, portfolioCard, valueAll } from "./portfolio/format";
 import { costHolding, type HoldingInput } from "./portfolio/holdings";
@@ -35,7 +38,7 @@ import { answer, ask, classify, nextQuestion, type ProfileState } from "./profil
 import { profileCard, QUESTIONS } from "./profile/questions";
 import { oggOpusToWav } from "./voice/opus";
 import { transcribe } from "./voice/transcribe";
-import { downloadMedia, markReadTyping, sendButtons, sendFlow, sendImage, sendList, sendText, type ListRow, type WhatsAppConfig } from "./whatsapp/client";
+import { downloadMedia, markReadTyping, sendButtons, sendFlow, sendImage, sendList, sendTemplate, sendText, type ListRow, type WhatsAppConfig } from "./whatsapp/client";
 import type { Inbound } from "./whatsapp/webhook";
 
 /** Where replies go: WhatsApp in production, a list in tests and the dev chat route. */
@@ -47,6 +50,8 @@ export interface Sender {
   image(to: string, url: string, caption?: string): Promise<void>;
   /** Opens the holdings form; data pre-fills it (the stock list). */
   flow(to: string, body: string, data: Record<string, unknown>): Promise<void>;
+  /** An approved template (outside the 24-hour window); payload comes back as the tapped button id. */
+  template(to: string, name: string, bodyParams: string[], quickReplyPayload: string): Promise<void>;
   typing(messageId: string): Promise<void>;
 }
 
@@ -65,6 +70,7 @@ export function whatsappSender(env: Env): Sender {
       env.WA_HOLDING_FLOW_ID
         ? sendFlow(wa, to, { id: env.WA_HOLDING_FLOW_ID, published: false }, body, "Open form", "HOLDING", data)
         : sendText(wa, to, body),
+    template: (to, name, params, payload) => sendTemplate(wa, to, { name, language: env.WA_TEMPLATE_LANG ?? "en" }, params, payload),
     typing: (id) => markReadTyping(wa, id).catch(() => {}),
   };
 }
@@ -76,7 +82,7 @@ const HOW_IT_WORKS = [
   "2. *Your plan*: your goal, monthly amount and limits. I suggest; you decide.",
   "3. *What you own*: tell me your shares, or start fresh.",
   "",
-  "Then ask me anything: prices, exact charges, news, your portfolio. When you want to invest, I propose a trade with every charge shown. *Nothing is bought or sold unless you tap Approve*, and your plan's limits are checked every time.",
+  "Then ask me anything: prices, exact charges, comparing stocks, news with sources, your portfolio. Say *follow GCB* and I'll message you when there's important news on it. When you want to invest, I propose a trade with every charge shown. *Nothing is bought or sold unless you tap Approve*, and your plan's limits are checked every time.",
   "",
   "Tap a button or just type or send a voice note. Send *menu* any time to see everything.",
 
@@ -96,7 +102,7 @@ const WELCOME = (name: string | null) =>
 /** Menu choices that are questions for the agent. */
 const AGENT_PROMPTS: Partial<Record<MenuAction, string>> = {
   invest: "I'd like to invest this month's amount. Please propose a trade that fits my plan.",
-  news: "Any recent news on the stocks I hold or like?",
+  news: "Any recent news on the stocks I hold, follow or like? Also remind me which stocks I'm following for news.",
 };
 
 /** A private link to this investor's activity page (WhatsApp users only; the web page shows its own link). */
@@ -531,6 +537,7 @@ async function handleHoldingForm(t: Turn, form: Record<string, string>): Promise
  * tools only, then the step the investor was on is shown again, so nothing is lost.
  */
 async function answerThenResume(t: Turn, text: string, step: string, resume: Ui): Promise<void> {
+  if (await outOfScope(t, text)) return deliver(t, resume);
   const history = (await t.db.history(t.to)).filter((m) => m.content !== MENU_MARKER);
   const result = await runAgent(
     { db: t.db, user: t.user, quotes: t.quotes, meta: metaClient(t.env.MODEL_API_KEY), model: t.env.META_MODEL, intentKey: t.env.INTENT_KEY },
@@ -542,6 +549,20 @@ async function answerThenResume(t: Turn, text: string, step: string, resume: Ui)
   return deliver(t, resume);
 }
 
+/**
+ * Sika only talks about investing on the GSE. Off-topic questions and attempts to change its rules get a
+ * fixed reply from code (the agent never sees them). True when the message was answered here.
+ * The user message must already be in history.
+ */
+async function outOfScope(t: Turn, text: string): Promise<boolean> {
+  const recent = (await t.db.history(t.to, 3)).filter((m) => m.content !== MENU_MARKER).slice(0, -1);
+  const verdict = await checkScope(metaClient(t.env.MODEL_API_KEY), t.env.META_MODEL, text, t.quotes, recent);
+  if (verdict === "in_scope") return false;
+  await t.db.audit(t.to, "scope_blocked", { verdict, text: text.slice(0, 500) });
+  await deliver(t, t.flow.stage === "ready" ? withMenu(t, replyFor(verdict)) : { text: replyFor(verdict) });
+  return true;
+}
+
 /** "Hi", "hello", "let's start": a greeting, not a question to answer. */
 const isGreeting = (text: string) =>
   text.trim().split(/\s+/).length <= 5 &&
@@ -549,6 +570,7 @@ const isGreeting = (text: string) =>
 
 async function converse(t: Turn, text: string): Promise<void> {
   await t.db.addMessage(t.to, "user", text);
+  if (await outOfScope(t, text)) return;
   const history = (await t.db.history(t.to)).filter((m) => m.content !== MENU_MARKER);
   const holdingCount = (await t.db.holdings(t.to)).length;
   const result = await runAgent(
@@ -633,6 +655,66 @@ async function runMenuAction(t: Turn, action: MenuAction | "menu"): Promise<void
   }
 }
 
+// ── Following stocks and updates ─────────────────────────────────────────
+
+async function followStock(t: Turn, on: boolean, symbol: string | null, typed: string): Promise<void> {
+  await t.db.addMessage(t.to, "user", typed);
+  if (t.flow.stage !== "ready") return deliver(t, { text: "You can follow stocks once setup is done. Here's where we were:" }).then(async () => deliver(t, await currentUi(t)));
+  if (!symbol) return deliver(t, withMenu(t, "Which stock? Use a GSE ticker, e.g. *follow GCB*."));
+  if (on) {
+    await t.db.follow(t.to, symbol);
+    await t.db.setNewsAlerts(t.to, true);
+    await t.db.audit(t.to, "follow", { symbol });
+    const outside = t.to.startsWith("web-") ? " (News messages reach WhatsApp only, not this web demo.)" : " I check twice each weekday.";
+    return deliver(t, withMenu(t, `🔔 Following *${symbol}*. I'll message you when there's important news on it.${outside} Say *unfollow ${symbol}* to stop.`));
+  }
+  const removed = await t.db.unfollow(t.to, symbol);
+  await t.db.audit(t.to, "unfollow", { symbol });
+  const held = (await t.db.holdings(t.to)).some((h) => h.symbol === symbol);
+  return deliver(
+    t,
+    withMenu(
+      t,
+      !removed && !held
+        ? `You weren't following ${symbol}.`
+        : held
+          ? `Unfollowed ${symbol}. You still hold it, so I'll still tell you about important news on it. Tap *Stop news alerts* on a news message to turn them all off.`
+          : `Unfollowed ${symbol}.`,
+    ),
+  );
+}
+
+/** "Show me" on a template sent outside the 24-hour window: the news item, or a fresh check of the price alert. */
+async function showPending(t: Turn, id: string): Promise<void> {
+  const update = await t.db.takePending(t.to, id);
+  if (!update) return deliver(t, withMenu(t, "That update has already been shown, or I can't find it."));
+  await t.db.addMessage(t.to, "user", "Show me");
+  await t.db.audit(t.to, "update_shown", { id, kind: update.kind, symbol: update.symbol });
+  if (update.kind === "news") {
+    const msg = update.payload as { text: string; buttons: { id: string; title: string }[] };
+    return deliver(t, { text: msg.text, buttons: msg.buttons });
+  }
+  // A price alert: the proposal would have expired by now, so check the live price again and propose afresh.
+  const h = (await t.db.holdings(t.to)).find((x) => x.symbol === update.symbol);
+  const snapshot = t.quotes.get(update.symbol);
+  if (!h || !snapshot || !t.user.mandate || !t.user.mandateConfirmed) return deliver(t, withMenu(t, `You no longer hold ${update.symbol}, so there's nothing to do.`));
+  const quote = await withLiveBook(snapshot);
+  t.quotes.set(quote.symbol, quote);
+  const trigger = triggered(h, quote, t.user.mandate);
+  if (!trigger) {
+    const now = quote.bid !== null ? `buyers are at ${ghs(quote.bid)}` : `nobody is bidding (last trade ${ghs(quote.last)})`;
+    return deliver(t, {
+      text: `The ${update.symbol} price has moved back since that alert: ${now}, so neither of your levels is reached now. I'll tell you if one is.`,
+      buttons: [
+        { id: "menu:alerts", title: "My alerts" },
+        { id: "flow:menu", title: "Menu" },
+      ],
+    });
+  }
+  const messages = await alertMessages(t.db, t.user, t.quotes, t.env.INTENT_KEY, h, trigger);
+  for (const m of messages) await deliver(t, m.buttons ? { text: m.text, buttons: m.buttons } : messages.length === 1 ? withMenu(t, m.text) : { text: m.text });
+}
+
 // ── Buttons ───────────────────────────────────────────────────────────────
 
 async function handleButton(t: Turn, id: string): Promise<void> {
@@ -667,6 +749,22 @@ async function handleButton(t: Turn, id: string): Promise<void> {
   }
 
   if (id.startsWith("hf:")) return formInput(t, { buttonId: id });
+
+  const [, pendingId] = /^update:show:([0-9a-f-]{36})$/.exec(id) ?? [];
+  if (pendingId) return showPending(t, pendingId);
+  const [, offSymbol] = /^follow:off:([A-Z0-9.]{2,12})$/.exec(id) ?? [];
+  if (offSymbol) return followStock(t, false, quotes.has(offSymbol) ? offSymbol : null, `(tapped) Unfollow ${offSymbol}`);
+  const [, moreSymbol] = /^news:more:([A-Z0-9.]{2,12})$/.exec(id) ?? [];
+  if (moreSymbol && quotes.has(moreSymbol)) return converse(t, `What's the latest news on ${moreSymbol}?`);
+  if (id === "news:mute") {
+    await db.setNewsAlerts(to, false);
+    await db.audit(to, "news_muted", {});
+    await db.addMessage(to, "user", "(tapped) Stop news alerts");
+    return deliver(t, {
+      text: "🔕 Done: no more news messages. Price alerts for your take-profit and stop-loss levels still come. Say *follow* and a stock (e.g. *follow GCB*) to turn news back on.",
+      buttons: [{ id: "flow:menu", title: "Menu" }],
+    });
+  }
 
   const [, field, value] = /^plan:(\w+):(\w+)$/.exec(id) ?? [];
   if (field === "edit" && value) {
@@ -832,6 +930,9 @@ export async function handle(message: Inbound, env: Env, send: Sender = whatsapp
     await db.addMessage(to, "user", text);
     return isGreeting(text) ? deliver(t, welcomeUi(t)) : answerThenResume(t, text, "welcome, before setup has started", welcomeUi(t));
   }
+
+  const follow = followCommand(text, quotes);
+  if (follow) return followStock(t, follow.on, follow.symbol, text);
 
   const lastAssistant = (await db.history(to, 1))[0];
   const choice = menuAction({ text }, lastAssistant?.role === "assistant" && lastAssistant.content === MENU_MARKER, flow.stage === "ready");

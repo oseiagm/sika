@@ -107,7 +107,11 @@ Some things you can ask:
 - "How many GCB shares can I buy with 500 cedis, all charges in?"
 - "What would it cost to sell 100 MTNGH?"
 - "Show my portfolio"
-- "Any recent news on MTN Ghana?" Sika searches the web and names its sources
+- "Any recent news on MTN Ghana?" Sika searches the web and ends with links to its sources. It only shows links the search actually returned.
+- "Compare MTN and GCB for 500 cedis": buyers, sellers, the gap between them, how each fits your plan, and what 500 cedis buys in each. Sika lays out the trade-offs but doesn't pick for you.
+- "follow CAL" / "unfollow CAL": Sika messages you when there's important news on a stock (see section 7)
+
+**Sika sticks to GSE investing.** It won't answer questions about other topics or other markets (crypto, forex, foreign stocks), write essays or code, or change its rules because a message asks it to. You'll get a short reply saying what it can help with.
 
 Every price, charge and amount comes from GSE market data and Sika's fee calculator, not from the AI's memory.
 
@@ -188,9 +192,13 @@ Then tap one of the buttons:
 - Each alert fires **once per level**. If you reject it, Sika won't nag you again until your holding or plan changes.
 - Send **/alerts** to see the exact prices that would trigger each alert.
 
+**News alerts.** Sika checks the news on the stocks you **hold or follow** twice each weekday (08:00 and 13:00). When there's an important story (results, dividends, deals, regulation, management changes, big price moves), it sends a short summary with a link to the source.
+- At most one story per stock at a time and two a day in total, and never the same story twice, even when several outlets cover it.
+- Under each news message: **More news**, **Unfollow** (for stocks you follow) and **Stop news alerts**. Following a stock again turns news back on.
+
 **Monthly reminder.** In the first week of each month, if you have a monthly amount and haven't invested yet, Sika asks: **Invest now** or **Not this month**.
 
-**One WhatsApp rule:** businesses can only message you within **24 hours of your last message**. If you've been quiet for longer, Sika holds the alert. Send any message, even "hi", to keep alerts coming.
+**One WhatsApp rule:** businesses can only message you within **24 hours of your last message**. If you've been quiet for longer, Sika sends a short notice instead ("There's a new update on MTNGH…") with a **Show me** button. Tapping it shows the news, or, for a price alert, checks the live price again and gives you a fresh proposal if your level is still reached.
 
 ## 8. The menu and shortcuts
 
@@ -201,7 +209,7 @@ Send **menu** at any time, or tap the **Menu** button under Sika's messages. Dur
 | Invest this month | A trade proposal for your monthly amount |
 | My portfolio | Your holdings, profit after charges and break-even prices |
 | Check a price | Live GSE prices and the exact charges to trade |
-| News on my stocks | Recent news on the stocks you hold or like, with sources |
+| News & stocks I follow | Recent news on the stocks you hold, follow or like, with links to sources |
 | Update holdings | Add or correct a holding, with the form or a message |
 | My plan | Your plan, with **Change something** to edit any setting |
 | My alerts | The prices that trigger your take-profit and stop-loss alerts |
@@ -209,7 +217,7 @@ Send **menu** at any time, or tap the **Menu** button under Sika's messages. Dur
 | How Sika works | A quick guide |
 | Start over | Deletes your profile, plan, holdings and history. **Sika asks you to confirm first** |
 
-**Shortcuts for regular users:** right after the menu appears you can reply with its number (e.g. **2** for your portfolio). You can also type shortcuts like **/portfolio**, **/invest** or **/plan**; some WhatsApp versions show them as a list when you type **/**. You never need these: everything is also a button.
+**Shortcuts for regular users:** right after the menu appears you can reply with its number (e.g. **2** for your portfolio). You can also type shortcuts like **/portfolio**, **/invest**, **/plan** or **/follow GCB**; some WhatsApp versions show them as a list when you type **/**. You never need these: everything is also a button.
 
 ## 9. Privacy
 

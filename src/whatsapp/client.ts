@@ -108,3 +108,28 @@ export function sendFlow(
 export function sendImage(config: WhatsAppConfig, to: string, link: string, caption?: string): Promise<void> {
   return send(config, { to, type: "image", image: { link, ...(caption ? { caption } : {}) } });
 }
+
+/**
+ * An approved message template: the only kind WhatsApp delivers outside the 24-hour window after the
+ * user's last message. The quick-reply payload comes back as a "button" message (see parseInbound).
+ */
+export function sendTemplate(
+  config: WhatsAppConfig,
+  to: string,
+  template: { name: string; language: string },
+  bodyParams: string[],
+  quickReplyPayload: string,
+): Promise<void> {
+  return send(config, {
+    to,
+    type: "template",
+    template: {
+      name: template.name,
+      language: { code: template.language },
+      components: [
+        { type: "body", parameters: bodyParams.map((text) => ({ type: "text", text: text.replace(/\s+/g, " ").slice(0, 200) })) },
+        { type: "button", sub_type: "quick_reply", index: "0", parameters: [{ type: "payload", payload: quickReplyPayload }] },
+      ],
+    },
+  });
+}

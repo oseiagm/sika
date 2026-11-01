@@ -10,7 +10,9 @@ In Ghana, people invest through brokers and talk on WhatsApp. Sika brings the tw
 3. **It proposes trades.** Each proposal is priced from IC Securities' **live order book**, with every charge shown to the pesewa, and explained.
 4. **It only acts when you tap Approve.** Your plan is enforced by fixed code that the AI cannot override.
 
-Typing, tapping and **voice notes** all work.
+Typing, tapping and **voice notes** all work. Investors can also **compare stocks** side by side, get **news with links to the sources**, and **follow stocks**: Sika messages them when there's important news.
+
+**It stays on topic.** Sika only talks about investing on the GSE. Off-topic questions (other markets, homework, poems) and attempts to change its rules get a fixed reply from code, so the model never answers them.
 
 ![How a trade flows](docs/flow.svg)
 
@@ -35,7 +37,7 @@ Red-teamed: **9/9 attacks stopped**, including prompt injection, "forget my limi
 | Model | What it does in Sika |
 |---|---|
 | **Muse Spark 1.3** (Meta Model API) | The agent: a tool-calling loop over live quotes, exact fee previews, the portfolio and trade proposals. Also turns free-text answers into structured choices ("about 750 a month", "MTN and the banks, never oil companies"), answers side questions mid-setup, and searches the web for news with `web_search` and cited sources |
-| **Muse Voice Transcribe** | WhatsApp voice notes → text. Voice notes arrive as Ogg Opus; Sika decodes them to 16 kHz WAV inside the Worker with a WebAssembly Opus decoder, with GSE names as recognition keywords |
+| **Muse Voice Transcribe** | Voice notes → text. WhatsApp notes arrive as Ogg Opus; Sika decodes them to 16 kHz WAV inside the Worker with a WebAssembly Opus decoder, with GSE names as recognition keywords. On the web page, tap the mic: the browser records the note and converts it to the same 16 kHz WAV before sending it |
 | **Muse Image** | After an investor's first trade, a personalised "first step" postcard: their goal in a Ghanaian setting, with the real trade written on it |
 
 ## Try it
@@ -65,7 +67,7 @@ Web (/) ────────────────────────
                        │                                                                │             │
                        │        paper broker on IC's live order book ◄──────────────────┘             │
                        └──────────────────────────────────────────────────────────────────────────────┘
-D1 (users, plans, holdings, intents, fills, audit, recordings) · Cron: price alerts + monthly reminder + market recording
+D1 (users, plans, holdings, intents, fills, audit, recordings, follows, news) · Cron: price alerts + monthly reminder + market recording + news check
 ```
 
 Everything runs on Cloudflare's free tier: Workers, Queues, D1 and Cron Triggers.
@@ -80,9 +82,12 @@ Everything runs on Cloudflare's free tier: Workers, Queues, D1 and Cron Triggers
 | Guided conversation (profile, plan, holdings form, menu) | `src/handle.ts`, `src/flow/`, `src/profile/` |
 | Voice (Ogg Opus → WAV → Muse Voice Transcribe) | `src/voice/` |
 | Alerts and monthly reminder | `src/alerts/` |
+| Topic guardrail (keyword fast path, then a small classifier) | `src/agent/scope.ts` |
+| Stock comparison | `src/market/compare.ts` |
+| News search with sources, follows and news alerts | `src/news/` |
 | Web try-it page and activity pages | `src/web/` |
 
-Tests: `npm test` runs 58 unit tests, covering the fee engine, rules, broker, signatures, profile scoring, plan builder, holdings form and alert levels. `node scripts/redteam.mjs` runs the attack suite.
+Tests: `npm test` runs the unit tests, covering the fee engine, rules, broker, signatures, profile scoring, plan builder, holdings form, alert levels, the topic guardrail, stock comparison and news (sources, link checks, dedupe). `node scripts/redteam.mjs` runs the attack suite.
 
 ## Docs
 - [User guide](docs/USER_GUIDE.md): how investors use Sika
@@ -93,6 +98,7 @@ Tests: `npm test` runs 58 unit tests, covering the fee engine, rules, broker, si
 ## Running it yourself
 - Deploy with `npm run deploy`. Secrets go from `.env` via `wrangler secret bulk`: `MODEL_API_KEY`, `WA_*`, `INTENT_KEY`. Run D1 migrations with `wrangler d1 migrations apply sika --remote`.
 - **WhatsApp webhook:** callback `<worker>/webhook`, subscribed to `messages`. The WhatsApp Business Account must also be subscribed to the app (`POST /<WABA_ID>/subscribed_apps`), or Meta never forwards messages.
-- **Shortcuts and ice breakers:** `node --env-file=.env scripts/setup-whatsapp.mjs`. WhatsApp Flows need a verified Meta business (otherwise error 139000, "Blocked by Integrity"), so adding holdings uses an in-chat step-by-step form instead.
+- **Shortcuts, ice breakers and the update template:** `node --env-file=.env scripts/setup-whatsapp.mjs`. It also submits the `sika_stock_update` template for Meta's review. Once it's approved, set `WA_UPDATE_TEMPLATE=sika_stock_update` in `wrangler.jsonc` vars. Sika then reaches investors outside WhatsApp's 24-hour window with news and price alerts: they get a short template, and tapping *Show me* shows the update (a price alert is re-checked against the live order book first). Without the template, those updates are skipped, as before.
+- **News alerts:** the cron at 08:00 and 13:00 on weekdays searches news for every held or followed stock (one search per stock, at most 25 stocks per run). The first search for a stock only records what's already out there. After that, Sika sends at most one new material story per stock per run and two per investor per day. Headlines it has already seen are passed to the search, so the same story from another outlet isn't sent twice. WhatsApp Flows need a verified Meta business (otherwise error 139000, "Blocked by Integrity"), so adding holdings uses an in-chat step-by-step form instead.
 - **Voice:** `scripts/extract-opus-wasm.mjs` pulls the Opus decoder's WebAssembly out of `opus-decoder`, because Workers can't compile WebAssembly at runtime.
 - **Weekend or after-hours demos:** during GSE hours the cron records IC's snapshot and the top 15 order books. `npx wrangler deploy --var MARKET_MODE:replay` serves the latest recording, clearly labelled "recorded … GMT".

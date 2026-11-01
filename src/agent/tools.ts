@@ -5,7 +5,9 @@ import { charges, ghs, lowestSellPrice, maxSharesFor, percent, toPesewas } from 
 import { propose } from "../intents/service";
 import { fingerprint } from "../intents/sign";
 import { Mandate, mandateCard } from "../mandate/schema";
+import { compareStocks } from "../market/compare";
 import { refreshLive, withLiveBook, type Quote } from "../market/quotes";
+import { searchNews } from "../news/search";
 import { holdingsDraftCard, portfolioCard, valueAll } from "../portfolio/format";
 import { costHolding, type HoldingInput } from "../portfolio/holdings";
 
@@ -23,6 +25,8 @@ export interface ToolContext {
   model: string;
   intentKey: string;
   outbox: Outgoing[];
+  /** Links tools returned this turn: the only ones the agent may show (see runAgent). */
+  sources: Set<string>;
 }
 
 /** Models sometimes send "null" or "" for an empty optional field. */
@@ -45,7 +49,13 @@ const Args = {
     priceCedis: optional(z.coerce.number().positive()).describe("Price per share; leave out for the last traded price"),
   }),
   get_portfolio: z.object({}),
+  compare_stocks: z.object({
+    symbols: z.array(z.string()).min(2).max(4),
+    amountCedis: optional(z.coerce.number().positive()).describe("Optional: what this amount (charges included) buys in each stock"),
+  }),
   search_news: z.object({ query: z.string().min(3).max(200) }),
+  follow_stock: z.object({ symbol: z.string() }),
+  unfollow_stock: z.object({ symbol: z.string() }),
   save_mandate_draft: z.object({ mandate: Mandate }),
   record_holdings: z.object({ holdings: z.array(HoldingInputSchema).min(1).max(30) }),
   remove_holding: z.object({ symbol: z.string() }),
@@ -64,7 +74,12 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   fee_preview:
     "Exact IC Securities charges for a buy or sell, to the pesewa, with the fee tier. For a BUY, also the break-even sell price. Give shares, or cashCedis to find how many shares that buys.",
   get_portfolio: "The user's saved holdings valued at the last price after sell charges, with break-even prices.",
-  search_news: "Search the web for recent news about a GSE company or the Ghanaian market. Returns a summary with sources.",
+  compare_stocks:
+    "Compare 2-4 GSE stocks side by side from the live order books: bid, ask, last trade, change today, spread, shares traded, how each fits the investor's plan (never-buy list, preferred, room under the per-stock limit), their holding if any, and optionally what an amount buys in each. For company fundamentals or recent events, also call search_news and cite its sources. Lay out the trade-offs; don't pick a winner for them.",
+  search_news:
+    "Search the web for recent news about a GSE company or Ghana's market. Returns a summary and sources (title and url). When you share news, end with up to 3 of these sources as '• Title: url'. Never write a link that isn't in sources.",
+  follow_stock: "Follow a GSE stock: Sika messages the investor when there is important news about it. Stocks they hold are watched automatically.",
+  unfollow_stock: "Stop following a stock's news.",
   save_mandate_draft:
     "Save the investor's mandate once you know their goal, time frame, risk, monthly amount, max % per stock and max per order. Sika then shows it as a card with Confirm/Change buttons. Afterwards, stop and wait for their tap.",
   record_holdings:
@@ -168,14 +183,35 @@ const handlers: { [K in ToolName]: (args: z.infer<(typeof Args)[K]>, ctx: ToolCo
     };
   },
 
+  async compare_stocks({ symbols, amountCedis }, ctx) {
+    const holdings = await ctx.db.holdings(ctx.user.waId);
+    const wanted = [...new Set([...symbols.map((s) => s.toUpperCase()), ...holdings.map((h) => h.symbol)])].filter((s) => ctx.quotes.has(s));
+    await refreshLive(ctx.quotes, wanted);
+    const mandate = ctx.user.mandateConfirmed ? ctx.user.mandate : null;
+    return compareStocks(symbols, ctx.quotes, holdings, mandate, amountCedis != null ? cedisToPesewas(amountCedis) : null);
+  },
+
   async search_news({ query }, ctx) {
-    const r = await ctx.meta.responses.create({
-      model: ctx.model,
-      reasoning: { effort: "low" },
-      tools: [{ type: "web_search" } as never],
-      input: `Find recent news (last few months) relevant to: ${query}. Context: Ghana Stock Exchange investor. Give 3-5 short bullet points with dates and source names. Facts only.`,
-    });
-    return { summary: r.output_text };
+    const r = await searchNews(ctx.meta, ctx.model, query);
+    for (const src of r.sources) ctx.sources.add(src.url);
+    return r;
+  },
+
+  async follow_stock({ symbol }, ctx) {
+    const q = quoteFor(ctx, symbol);
+    await ctx.db.follow(ctx.user.waId, q.symbol);
+    return { following: q.symbol, note: "Tell them you'll message them when there's important news on it, and they can say 'unfollow' any time." };
+  },
+
+  async unfollow_stock({ symbol }, ctx) {
+    const sym = symbol.toUpperCase();
+    const removed = await ctx.db.unfollow(ctx.user.waId, sym);
+    const held = (await ctx.db.holdings(ctx.user.waId)).some((h) => h.symbol === sym);
+    if (!removed && !held) return { error: `They weren't following ${sym}` };
+    return {
+      unfollowed: sym,
+      ...(held ? { note: "They still hold it, so important news on it can still come. Tapping 'Stop news alerts' on a news message turns all of them off." } : {}),
+    };
   },
 
   async save_mandate_draft({ mandate }, ctx) {

@@ -134,6 +134,7 @@ export const TRY_PAGE = /* html */ `<!doctype html>
   .bubble .meta { float: right; margin: 6px 0 -4px 10px; font-size: 11px; color: var(--soft); display: inline-flex; gap: 3px; align-items: center; }
   .me .meta svg { color: var(--tick); }
   .bubble img { display: block; width: 100%; border-radius: 7px; margin: -2px 0 6px; aspect-ratio: 1; object-fit: cover; background: var(--chat); }
+  .bubble a { color: inherit; text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
   .actions { display: grid; gap: 2px; margin-top: 2px; }
   .actions button {
     background: var(--them); border: 0; border-radius: 10px; padding: 10px; cursor: pointer;
@@ -160,6 +161,19 @@ export const TRY_PAGE = /* html */ `<!doctype html>
   .send { width: 42px; height: 42px; border-radius: 50%; border: 0; background: var(--gold); color: var(--gold-ink); display: grid; place-items: center; cursor: pointer; flex: none; transition: transform .12s; }
   .send:disabled { opacity: .4; cursor: default; }
   .send:not(:disabled):active { transform: scale(.94); }
+  .recbar { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; height: 42px; padding: 0 6px 0 2px; color: var(--ink); font-size: 15px; }
+  .recbar[hidden] { display: none; }
+  .recbar .cancel { width: 38px; height: 38px; border: 0; border-radius: 50%; background: none; color: var(--soft); display: grid; place-items: center; cursor: pointer; flex: none; }
+  .recbar .cancel:hover { background: var(--chat); }
+  .recbar .dot { width: 10px; height: 10px; border-radius: 50%; background: #e5484d; animation: blink 1s infinite; flex: none; }
+  .recbar .hint { color: var(--soft); font-size: 13px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  @keyframes blink { 50% { opacity: .25; } }
+  .voice { display: flex; align-items: center; gap: 10px; min-width: 190px; padding: 2px 0; }
+  .voice .play { width: 34px; height: 34px; border-radius: 50%; border: 0; background: none; color: var(--soft); display: grid; place-items: center; cursor: pointer; flex: none; }
+  .voice .play:disabled { opacity: .45; cursor: default; }
+  .voice .wave { flex: 1; display: flex; align-items: center; gap: 2px; height: 26px; }
+  .voice .wave i { flex: 1; max-width: 3px; border-radius: 2px; background: var(--soft); opacity: .55; }
+  .voice .dur { font-size: 12px; color: var(--soft); font-variant-numeric: tabular-nums; }
 
   .sheet { position: absolute; inset: 0; z-index: 5; display: flex; align-items: flex-end; background: var(--sheet-scrim); opacity: 0; pointer-events: none; transition: opacity .2s; }
   .sheet.on { opacity: 1; pointer-events: auto; }
@@ -174,7 +188,7 @@ export const TRY_PAGE = /* html */ `<!doctype html>
   .sheet-rows small { color: var(--soft); font-size: 13px; }
 
   @media (prefers-reduced-motion: reduce) {
-    .enter, .typing i { animation: none; }
+    .enter, .typing i, .recbar .dot { animation: none; }
     .sheet, .sheet-card, .send { transition: none; }
   }
 
@@ -231,6 +245,14 @@ export const TRY_PAGE = /* html */ `<!doctype html>
       <form class="compose" id="compose">
         <label class="sr" for="text">Message Sika</label>
         <input id="text" autocomplete="off" maxlength="500" placeholder="Message">
+        <div class="recbar" id="recbar" hidden>
+          <button type="button" class="cancel" id="reccancel" aria-label="Cancel voice note">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>
+          </button>
+          <span class="dot" aria-hidden="true"></span>
+          <span id="rectime" aria-live="off">0:00</span>
+          <span class="hint">Recording… tap send when done</span>
+        </div>
         <button class="send" id="send" aria-label="Send">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
         </button>
@@ -267,11 +289,22 @@ export const TRY_PAGE = /* html */ `<!doctype html>
   let busy = false;
 
   const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-  // Chat formatting: *bold*, _italic_, line breaks.
-  const fmt = (s) => esc(s)
-    .replace(/\\*([^*\\n]+)\\*/g, "<strong>$1</strong>")
-    .replace(/(^|[\\s(])_([^_\\n]+)_(?=[\\s).,!?:]|$)/g, "$1<em>$2</em>")
-    .replace(/\\n/g, "<br>");
+  // Chat formatting: *bold*, _italic_, line breaks, and web links (http/https only; set aside first so
+  // bold/italic never touch them, and escaped like everything else).
+  const fmt = (s) => {
+    const links = [];
+    const html = esc(String(s).replace(/\\u0000/g, ""))
+      .replace(/https?:\\/\\/[^\\s<>"]+/g, (u) => {
+        const tail = (/[).,;:!?\\]]+$/.exec(u) || [""])[0];
+        const url = tail ? u.slice(0, -tail.length) : u;
+        links.push('<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + "</a>");
+        return "\\u0000" + (links.length - 1) + "\\u0000" + tail;
+      })
+      .replace(/\\*([^*\\n]+)\\*/g, "<strong>$1</strong>")
+      .replace(/(^|[\\s(])_([^_\\n]+)_(?=[\\s).,!?:]|$)/g, "$1<em>$2</em>")
+      .replace(/\\n/g, "<br>");
+    return html.replace(/\\u0000(\\d+)\\u0000/g, (_, n) => links[Number(n)]);
+  };
   const hhmm = (t) => new Date(t).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
   const ticks = '<svg width="16" height="11" viewBox="0 0 16 11" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M1 6l3 3 6-7M6 9l1 1 6-8"/></svg>';
   const listIcon = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>';
@@ -291,7 +324,8 @@ export const TRY_PAGE = /* html */ `<!doctype html>
     const b = document.createElement("div");
     b.className = "bubble";
     b.innerHTML = (safeImage(m.image) ? '<img alt="A postcard Sika made for this moment" src="' + esc(m.image) + '">' : "") +
-      fmt(m.text || "") + '<span class="meta">' + hhmm(m.at) + (m.from === "me" ? ticks : "") + "</span>";
+      (typeof m.voice === "number" ? voiceHtml(m) : fmt(m.text || "")) + '<span class="meta">' + hhmm(m.at) + (m.from === "me" ? ticks : "") + "</span>";
+    if (typeof m.voice === "number") wireVoice(b, m);
     row.appendChild(b);
     const choices = m.buttons ? m.buttons.map((x) => ({ label: x.title, run: () => send({ buttonId: x.id }, x.title) }))
       : m.list ? [{ label: m.list.button, icon: listIcon, run: () => openSheet(m.list) }] : [];
@@ -310,10 +344,38 @@ export const TRY_PAGE = /* html */ `<!doctype html>
     log.appendChild(row);
   }
 
+  // A voice note's recording lives only in this page; the saved chat keeps its length, not the audio.
+  const playIcon = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+  const pauseIcon = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>';
+  const duration = (secs) => Math.floor(secs / 60) + ":" + String(Math.floor(secs % 60)).padStart(2, "0");
+  function voiceHtml(m) {
+    let seed = Math.round(m.at || 1) % 9973;
+    const bars = Array.from({ length: 28 }, () => {
+      seed = (seed * 31 + 7) % 9973;
+      return '<i style="height:' + (5 + (seed % 19)) + 'px"></i>';
+    }).join("");
+    const label = m.audio ? "Play voice note" : "Voice note (recording not kept after a reload)";
+    return '<div class="voice"><button type="button" class="play" aria-label="' + label + '"' + (m.audio ? "" : " disabled") + ">" + playIcon +
+      '</button><span class="wave" aria-hidden="true">' + bars + '</span><span class="dur">' + duration(m.voice) + "</span></div>";
+  }
+  function wireVoice(b, m) {
+    const btn = b.querySelector(".play");
+    if (!btn || !m.audio) return;
+    let audio = null;
+    btn.onclick = () => {
+      if (!audio) {
+        audio = new Audio(m.audio);
+        audio.onended = audio.onpause = () => { btn.innerHTML = playIcon; btn.setAttribute("aria-label", "Play voice note"); };
+        audio.onplay = () => { btn.innerHTML = pauseIcon; btn.setAttribute("aria-label", "Pause voice note"); };
+      }
+      if (audio.paused) audio.play(); else audio.pause();
+    };
+  }
+
   function add(m) {
     m.at = m.at || Date.now();
     transcript.push(m);
-    store.set("sika.transcript", JSON.stringify(transcript.slice(-150)));
+    store.set("sika.transcript", JSON.stringify(transcript.slice(-150).map(({ audio, ...kept }) => kept)));
     render(m, true);
     log.scrollTop = log.scrollHeight;
   }
@@ -356,13 +418,18 @@ export const TRY_PAGE = /* html */ `<!doctype html>
     document.querySelectorAll(".say").forEach((s) => (s.disabled = on));
   }
 
-  async function send(payload, shown) {
+  function send(payload, shown) {
+    return turn({ from: "me", text: shown }, () =>
+      fetch("/api/try/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session, ...payload }) }));
+  }
+
+  async function turn(mine, request) {
     if (busy) return;
     setBusy(true);
-    add({ from: "me", text: shown });
+    add(mine);
     typing(true);
     try {
-      const res = await fetch("/api/try/chat", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session, ...payload }) });
+      const res = await request();
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || "Sika didn't answer. Check your connection and try again.");
       typing(false);
@@ -377,13 +444,119 @@ export const TRY_PAGE = /* html */ `<!doctype html>
     }
   }
 
+  // Voice notes, like on WhatsApp. Browsers record in different formats (WebM, Ogg, MP4), so the page
+  // converts each note to the 16 kHz mono WAV that Muse Voice Transcribe takes, then sends it.
+  const MAX_VOICE_SECONDS = 60;
+  const canRecord = Boolean(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder &&
+    (window.AudioContext || window.webkitAudioContext) && window.OfflineAudioContext);
+  const sendIcon = sendBtn.innerHTML;
+  const micIcon = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>';
+  let rec = null;
+
+  function syncButton() {
+    const mic = canRecord && !rec && !input.value.trim();
+    sendBtn.classList.toggle("mic", mic);
+    sendBtn.innerHTML = mic ? micIcon : sendIcon;
+    sendBtn.setAttribute("aria-label", mic ? "Record a voice note" : rec ? "Send voice note" : "Send");
+  }
+  input.addEventListener("input", syncButton);
+
+  async function startRecording() {
+    if (busy || rec) return;
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+    } catch {
+      add({ from: "note", text: "Sika needs your microphone for voice notes. Allow it in your browser, or type instead.", error: true });
+      return;
+    }
+    const recorder = new MediaRecorder(stream);
+    const r = { recorder, stream, chunks: [], started: Date.now(), timer: 0 };
+    recorder.ondataavailable = (e) => { if (e.data && e.data.size) r.chunks.push(e.data); };
+    recorder.start(250);
+    rec = r;
+    r.timer = setInterval(() => {
+      const secs = (Date.now() - r.started) / 1000;
+      $("rectime").textContent = duration(secs);
+      if (secs >= MAX_VOICE_SECONDS) finishRecording(true);
+    }, 250);
+    $("rectime").textContent = "0:00";
+    input.hidden = true;
+    $("recbar").hidden = false;
+    syncButton();
+    $("reccancel").focus();
+  }
+
+  function finishRecording(keep) {
+    const r = rec;
+    if (!r) return;
+    rec = null;
+    clearInterval(r.timer);
+    const secs = Math.min(MAX_VOICE_SECONDS, (Date.now() - r.started) / 1000);
+    r.recorder.onstop = () => {
+      r.stream.getTracks().forEach((t) => t.stop());
+      if (!keep) return;
+      if (secs < 1) { add({ from: "note", text: "That was too short. Tap the mic, speak, then tap send." }); return; }
+      sendVoice(new Blob(r.chunks, { type: r.recorder.mimeType || "audio/webm" }), secs);
+    };
+    r.recorder.stop();
+    input.hidden = false;
+    $("recbar").hidden = true;
+    syncButton();
+    sendBtn.focus();
+  }
+  $("reccancel").onclick = () => finishRecording(false);
+
+  /** Any recording the browser can play → 16 kHz, mono, 16-bit PCM WAV. */
+  async function toWav(blob) {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new Ctx();
+    let decoded;
+    try {
+      decoded = await ctx.decodeAudioData(await blob.arrayBuffer());
+    } catch {
+      throw new Error("Your browser couldn't read that recording. Please type your message instead.");
+    } finally {
+      if (ctx.close) ctx.close();
+    }
+    const rate = 16000;
+    const length = Math.max(1, Math.min(MAX_VOICE_SECONDS * rate, Math.ceil(decoded.duration * rate)));
+    const offline = new OfflineAudioContext(1, length, rate);
+    const source = offline.createBufferSource();
+    source.buffer = decoded;
+    source.connect(offline.destination);
+    source.start();
+    const pcm = (await offline.startRendering()).getChannelData(0);
+    const out = new DataView(new ArrayBuffer(44 + pcm.length * 2));
+    const tag = (at, text) => { for (let i = 0; i < 4; i++) out.setUint8(at + i, text.charCodeAt(i)); };
+    tag(0, "RIFF"); out.setUint32(4, 36 + pcm.length * 2, true); tag(8, "WAVE");
+    tag(12, "fmt "); out.setUint32(16, 16, true); out.setUint16(20, 1, true); out.setUint16(22, 1, true);
+    out.setUint32(24, rate, true); out.setUint32(28, rate * 2, true); out.setUint16(32, 2, true); out.setUint16(34, 16, true);
+    tag(36, "data"); out.setUint32(40, pcm.length * 2, true);
+    for (let i = 0; i < pcm.length; i++) {
+      const x = Math.max(-1, Math.min(1, pcm[i]));
+      out.setInt16(44 + i * 2, x < 0 ? x * 32768 : x * 32767, true);
+    }
+    return out.buffer;
+  }
+
+  function sendVoice(blob, secs) {
+    return turn({ from: "me", voice: Math.max(1, Math.round(secs)), audio: URL.createObjectURL(blob) }, async () =>
+      fetch("/api/try/voice?session=" + session, { method: "POST", headers: { "content-type": "audio/wav" }, body: await toWav(blob) }));
+  }
+
   $("compose").addEventListener("submit", (e) => {
     e.preventDefault();
+    if (rec) return finishRecording(true);
     const text = input.value.trim();
-    if (!text || busy) return;
+    if (!text) { if (canRecord && !busy) startRecording(); return; }
+    if (busy) return;
     input.value = "";
+    syncButton();
     send({ text }, text);
   });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && rec) finishRecording(false); });
+  syncButton();
   document.querySelectorAll(".say").forEach((b) => b.addEventListener("click", () => send({ text: b.dataset.say }, b.dataset.say)));
 
   $("restart").onclick = () => {

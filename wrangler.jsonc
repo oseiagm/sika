@@ -13,12 +13,13 @@
     "producers": [{ "binding": "INBOX", "queue": "sika-inbox" }],
     "consumers": [{ "queue": "sika-inbox", "max_batch_size": 1, "max_batch_timeout": 0, "max_retries": 2 }]
   },
-  "triggers": { "crons": ["*/30 10-15 * * 1-5", "0 9 * * *"] },
+  "triggers": { "crons": ["*/30 10-15 * * 1-5", "0 9 * * *", "0 8,13 * * 1-5"] },
   "vars": {
     "META_MODEL": "muse-spark-1.3",
     "PUBLIC_BASE_URL": "https://sika.cloudflareos-01eeeb.workers.dev",
     "WA_HOLDING_FLOW_ID": "1449330897191289"
   }
+  // Once the sika_stock_update template is approved, add "WA_UPDATE_TEMPLATE": "sika_stock_update" to vars.
   // Secrets (wrangler secret put): MODEL_API_KEY, WA_PHONE_NUMBER_ID, WA_BUSINESS_ACCOUNT_ID,
   // WA_ACCESS_TOKEN, WA_APP_SECRET, WA_VERIFY_TOKEN
 }

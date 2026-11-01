@@ -3,7 +3,7 @@
 **Track:** Indie Developer · **Theme:** Build for Your World
 
 **Links**
-- **Public GitHub repository:** _(to add after the repo is created)_
+- **Public GitHub repository:** https://github.com/oseiagm/sika
 - **3-minute demo video:** _(YouTube link after recording)_
 - **Live demo:** https://sika.cloudflareos-01eeeb.workers.dev
 
@@ -20,6 +20,10 @@ Investing on the GSE today means a broker's form, a statement PDF and a lot of g
 3. **Proposes trades.** Each proposal is priced from IC Securities' live order book, with every charge shown to the pesewa and a plain explanation. You can tap, type or send a voice note.
 4. **Only acts when you tap Approve.** The AI can only suggest. Fixed code checks every trade against your plan: per-order and monthly limits, max in one stock, never-buy list, never sell at a loss, and that someone is actually on the other side. Each proposal is signed, expires after 30 minutes, and executes exactly once.
 
+Investors can also **compare stocks** side by side (buyers, sellers, the gap between them, how each fits their plan, and what their money buys in each). They get **news with links to the sources**, and can **follow a stock**: Sika messages them when there's important news on it. It sends at most one story at a time and never the same story twice. Voice notes work on the web page too, just like WhatsApp.
+
+Sika **stays on topic**. It only talks about investing on the GSE. Off-topic requests (other markets, homework, poems) and attempts to change its rules get a fixed reply written in code, so the model never answers them.
+
 Every decision is visible on a private activity page: the AI's reasoning, the order book, each plan check, your decision and the fill.
 
 I red-teamed it with prompt injection, "forget my limits", typing "I approve" instead of tapping, forged approvals and double taps. All 9 attacks were stopped. Execution is simulated on real prices. Connecting a real broker would mean one adapter behind the same approval flow.
@@ -32,11 +36,13 @@ Try it in a browser: https://sika.cloudflareos-01eeeb.workers.dev
   - **Agent.** A tool-calling loop over live GSE quotes, exact fee previews, the portfolio and trade proposals.
   - **Free text to exact choices.** Structured extraction turns messages like "about 750 a month" or "MTN and the banks, never oil companies" into amounts and tickers.
   - **Questions at any point.** It answers questions mid-setup, with look-up tools only.
-  - **News.** `web_search` grounding finds news with cited sources.
+  - **News.** `web_search` grounding finds news, and Sika ends each answer with links taken from its citations. Any link the search didn't return is removed before the message is sent. The same search, with structured JSON output, powers news alerts for the stocks an investor holds or follows. Headlines already seen are passed back in, so the same story from another outlet isn't sent twice.
+  - **Comparing stocks.** A `compare_stocks` tool gives Spark live order books, spreads and plan fit for 2–4 stocks to explain side by side.
+  - **Staying on topic.** A small Spark call classifies any message that isn't clearly about investing as in scope, off topic or a manipulation attempt. Code, not the model, replies to the last two.
   - **Local languages.** It replies in the language the investor writes in (Twi, Ga, Ewe, Hausa or Pidgin).
-- **Muse Voice Transcribe** turns WhatsApp voice notes into text. Voice notes arrive as Ogg Opus, so Sika decodes them to 16 kHz WAV inside a Cloudflare Worker with a WebAssembly Opus decoder, and gives the recogniser GSE names as keywords.
+- **Muse Voice Transcribe** turns voice notes into text. WhatsApp voice notes arrive as Ogg Opus, so Sika decodes them to 16 kHz WAV inside a Cloudflare Worker with a WebAssembly Opus decoder, and gives the recogniser GSE names as keywords. On the web page, the browser records the note and converts it to the same 16 kHz WAV before sending it, so both channels share one transcription path.
 - **Muse Image** makes a personalised "first step" postcard after an investor's first trade: their goal in a Ghanaian setting (a house in Accra, a graduation, a shop in Kumasi), with their real first trade written on it.
-- **WhatsApp Cloud API** is the channel. Sika uses interactive reply buttons and list menus for a guided, tap-first flow; slash commands and ice breakers; voice note download; image messages; and signed webhooks.
+- **WhatsApp Cloud API** is the channel. Sika uses interactive reply buttons and list menus for a guided, tap-first flow; slash commands and ice breakers; voice note download; image messages; and signed webhooks. A message template with a quick-reply button reaches investors outside the 24-hour window with news and price alerts. Tapping *Show me* shows the update, and a price alert is re-checked against the live order book before Sika proposes anything.
 
 ## Why are Meta's models important to your solution?
 
@@ -52,11 +58,12 @@ They let Sika meet people where they are: in WhatsApp, in their own words, by vo
 What worked well:
 - **Easy to plug in.** The Meta Model API's OpenAI-compatible interface worked on the first try. I pointed the OpenAI SDK at api.meta.ai and had a tool-calling agent running in minutes.
 - **Tool calling is reliable.** One gap: Spark sometimes sends `"null"` as a string for optional fields, so I made the tool schemas tolerant.
-- **`web_search` is genuinely useful.** Cited, dated news with no retrieval setup.
+- **`web_search` is genuinely useful.** Cited, dated news with no retrieval setup. The Responses API's `url_citation` annotations come with real titles, so Sika can show sources without parsing the answer text.
 - **Muse Image renders text exactly.** Short text like "75 MTNGH shares · GHS 499.69" came out right every time, which made the postcard possible.
 
 What could be better:
 - **Audio formats.** Muse Voice Transcribe only accepts WAV/PCM, and Spark's audio input doesn't accept Ogg either. WhatsApp voice notes are Ogg Opus, so every WhatsApp builder has to transcode, which is hard inside serverless limits. Native Ogg Opus support would remove a whole layer.
+- **Repeated search results.** The same news search a few hours apart returns the same story at different outlets and URLs, so deduplicating by URL isn't enough for alerts. I pass the headlines Sika has already seen back into the prompt. A way to exclude known URLs or story IDs in `web_search` would make this simpler.
 - **Default reasoning on trivial replies.** A one-line reply used about 335 reasoning tokens until I set `reasoning_effort` to low. A cheaper default, or guidance in the docs, would help.
 - **WhatsApp setup pitfalls:**
   - The new guided setup didn't subscribe the WhatsApp Business Account to my app, so webhooks never arrived, with no error. I had to call `/subscribed_apps` myself.

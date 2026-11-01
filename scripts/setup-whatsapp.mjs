@@ -23,7 +23,8 @@ const commands = [
   ["portfolio", "See your holdings, profit after charges and break-even prices"],
   ["invest", "Get a trade proposal for this month's amount"],
   ["price", "Check a GSE price and the exact charges to trade"],
-  ["news", "Recent news on the stocks you hold or like"],
+  ["news", "News on your stocks, and the stocks you follow"],
+  ["follow", "Follow a stock for news, e.g. /follow GCB"],
   ["holdings", "Add or correct a holding"],
   ["plan", "See or change your investing plan"],
   ["alerts", "See the prices that trigger your alerts"],
@@ -45,3 +46,27 @@ form.append("file", new Blob([readFileSync(new URL("../flows/holding.json", impo
 const upload = await call("POST", `${flow.id}/assets`, undefined, form);
 console.log("flow", flow.id, "validation errors:", JSON.stringify(upload.validation_errors ?? []));
 console.log(`Set WA_HOLDING_FLOW_ID=${flow.id} in wrangler.jsonc vars.`);
+
+// The update template: what Sika sends for news or a price alert once the 24-hour window has closed.
+// Meta reviews new templates (minutes to a day); it may file it as MARKETING, which is priced higher.
+const TEMPLATE = "sika_stock_update";
+const templates = await call("GET", `${waba}/message_templates?name=${TEMPLATE}&fields=name,status,category`);
+if (templates.data.length === 0) {
+  const created = await call("POST", `${waba}/message_templates`, {
+    name: TEMPLATE,
+    language: "en",
+    category: "UTILITY",
+    components: [
+      {
+        type: "BODY",
+        text: "There's a new update on {{1}}: {{2}}. Tap below to see it.",
+        example: { body_text: [["MTNGH", "your take-profit level was reached"]] },
+      },
+      { type: "BUTTONS", buttons: [{ type: "QUICK_REPLY", text: "Show me" }] },
+    ],
+  });
+  console.log("template submitted for review:", created);
+} else {
+  console.log("template:", JSON.stringify(templates.data));
+}
+console.log(`Set WA_UPDATE_TEMPLATE=${TEMPLATE} in wrangler.jsonc vars once it's APPROVED.`);

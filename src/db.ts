@@ -6,6 +6,16 @@ import type { FlowState } from "./flow/state";
 import type { ProfileState } from "./profile/conversation";
 import type { Tape } from "./market/quotes";
 import type { Holding, HoldingInput } from "./portfolio/holdings";
+import type { NewsItem } from "./news/search";
+
+export interface PendingUpdate {
+  id: string;
+  waId: string;
+  kind: "news" | "price";
+  symbol: string;
+  payload: unknown;
+  createdAt: string;
+}
 
 export type IntentStatus = "PROPOSED" | "APPROVED" | "REJECTED" | "EXPIRED" | "FILLED" | "FAILED";
 
@@ -271,6 +281,97 @@ export class Db {
     return r !== null;
   }
 
+  // ── News: follows, articles seen, updates waiting behind a template tap ──
+
+  async follow(waId: string, symbol: string): Promise<void> {
+    await this.d1.prepare("INSERT OR IGNORE INTO follows (wa_id, symbol) VALUES (?, ?)").bind(waId, symbol).run();
+  }
+
+  async unfollow(waId: string, symbol: string): Promise<boolean> {
+    const r = await this.d1.prepare("DELETE FROM follows WHERE wa_id = ? AND symbol = ?").bind(waId, symbol).run();
+    return r.meta.changes === 1;
+  }
+
+  async follows(waId: string): Promise<string[]> {
+    const { results } = await this.d1.prepare("SELECT symbol FROM follows WHERE wa_id = ? ORDER BY symbol").bind(waId).all<{ symbol: string }>();
+    return results.map((r) => r.symbol);
+  }
+
+  /** Stocks to check for news → who to tell: held or followed, by WhatsApp users with a confirmed plan and news on. */
+  async newsWatch(): Promise<Map<string, string[]>> {
+    const { results } = await this.d1
+      .prepare(
+        `SELECT w.symbol, w.wa_id FROM (
+           SELECT wa_id, symbol FROM holdings UNION SELECT wa_id, symbol FROM follows
+         ) w JOIN users u ON u.wa_id = w.wa_id
+         WHERE u.mandate_confirmed_at IS NOT NULL AND u.news_alerts = 1 AND u.wa_id NOT LIKE 'web-%'`,
+      )
+      .all<{ symbol: string; wa_id: string }>();
+    const watch = new Map<string, string[]>();
+    for (const r of results) watch.set(r.symbol, [...(watch.get(r.symbol) ?? []), r.wa_id]);
+    return watch;
+  }
+
+  /** Headlines seen for a stock in the last week, newest first. */
+  async recentNewsTitles(symbol: string, days = 7): Promise<string[]> {
+    const { results } = await this.d1
+      .prepare("SELECT title FROM news_seen WHERE symbol = ? AND first_seen >= datetime('now', ?) ORDER BY first_seen DESC LIMIT 15")
+      .bind(symbol, `-${days} days`)
+      .all<{ title: string }>();
+    return results.map((r) => r.title);
+  }
+
+  async hasSeenNews(symbol: string): Promise<boolean> {
+    return (await this.d1.prepare("SELECT 1 AS ok FROM news_seen WHERE symbol = ? LIMIT 1").bind(symbol).first()) !== null;
+  }
+
+  /** Stores the articles; returns only the ones not seen before. */
+  async markNewsSeen(symbol: string, items: NewsItem[]): Promise<NewsItem[]> {
+    if (items.length === 0) return [];
+    const res = await this.d1.batch(
+      items.map((i) =>
+        this.d1
+          .prepare("INSERT OR IGNORE INTO news_seen (symbol, url, title, summary, published, material) VALUES (?, ?, ?, ?, ?, ?)")
+          .bind(symbol, i.url, i.title, i.summary, i.date ?? null, i.material ? 1 : 0),
+      ),
+    );
+    return items.filter((_, n) => res[n]?.meta.changes === 1);
+  }
+
+  async setNewsAlerts(waId: string, on: boolean): Promise<void> {
+    await this.d1.prepare("UPDATE users SET news_alerts = ? WHERE wa_id = ?").bind(on ? 1 : 0, waId).run();
+  }
+
+  async newsAlertsOn(waId: string): Promise<boolean> {
+    const r = await this.d1.prepare("SELECT news_alerts FROM users WHERE wa_id = ?").bind(waId).first<{ news_alerts: number }>();
+    return (r?.news_alerts ?? 1) === 1;
+  }
+
+  /** News messages (or news templates) sent to this investor today (UTC, which is Accra time). */
+  async newsPushesToday(waId: string): Promise<number> {
+    const r = await this.d1
+      .prepare("SELECT COUNT(*) AS n FROM alerts_sent WHERE wa_id = ? AND key LIKE 'news:%' AND at >= date('now')")
+      .bind(waId)
+      .first<{ n: number }>();
+    return r?.n ?? 0;
+  }
+
+  async savePending(u: Omit<PendingUpdate, "createdAt">): Promise<void> {
+    await this.d1
+      .prepare("INSERT INTO pending_updates (id, wa_id, kind, symbol, payload_json) VALUES (?, ?, ?, ?, ?)")
+      .bind(u.id, u.waId, u.kind, u.symbol, bigintJson(u.payload))
+      .run();
+  }
+
+  /** Marks the update shown and returns it, once; null if it isn't this investor's or was already shown. */
+  async takePending(waId: string, id: string): Promise<PendingUpdate | null> {
+    const r = await this.d1
+      .prepare("UPDATE pending_updates SET shown_at = datetime('now') WHERE id = ? AND wa_id = ? AND shown_at IS NULL RETURNING *")
+      .bind(id, waId)
+      .first<{ id: string; wa_id: string; kind: "news" | "price"; symbol: string; payload_json: string; created_at: string }>();
+    return r ? { id: r.id, waId: r.wa_id, kind: r.kind, symbol: r.symbol, payload: JSON.parse(r.payload_json), createdAt: r.created_at } : null;
+  }
+
   /** Claims an alert key; false if it was already sent. */
   async claimAlert(waId: string, key: string): Promise<boolean> {
     const r = await this.d1.prepare("INSERT OR IGNORE INTO alerts_sent (wa_id, key) VALUES (?, ?)").bind(waId, key).run();
@@ -350,6 +451,8 @@ export class Db {
       this.d1.prepare("DELETE FROM holdings WHERE wa_id = ?").bind(waId),
       this.d1.prepare("DELETE FROM fills WHERE wa_id = ?").bind(waId),
       this.d1.prepare("DELETE FROM alerts_sent WHERE wa_id = ?").bind(waId),
+      this.d1.prepare("DELETE FROM follows WHERE wa_id = ?").bind(waId),
+      this.d1.prepare("DELETE FROM pending_updates WHERE wa_id = ?").bind(waId),
       this.d1.prepare("DELETE FROM intents WHERE wa_id = ?").bind(waId),
       this.d1.prepare("DELETE FROM messages WHERE wa_id = ?").bind(waId),
       this.d1.prepare("DELETE FROM audit WHERE wa_id = ?").bind(waId),

@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { ghs } from "./fees/engine";
 import { checkPriceAlerts, monthlyReminder } from "./alerts/monitor";
 import { checkNews } from "./news/monitor";
-import { handle, whatsappSender } from "./handle";
+import { handle, localizedSender, whatsappSender } from "./handle";
 import { prepareMarket, recordTape } from "./market/replay";
 import { devSeedPage } from "./web/devSeed";
 import { TRY_PAGE } from "./web/tryPage";
@@ -21,8 +21,6 @@ export interface Env {
   WA_ACCESS_TOKEN: string;
   WA_APP_SECRET: string;
   WA_VERIFY_TOKEN: string;
-  /** Signs trade intents between proposal and execution. */
-  INTENT_KEY: string;
   /** "replay" serves the last recorded GSE session instead of live IC data (weekend or after-hours demos). */
   MARKET_MODE?: string;
   /** Where the web pages live, for links sent in chat. */
@@ -35,6 +33,8 @@ export interface Env {
   WA_TEMPLATE_LANG?: string;
   /** "1" only in local dev: enables POST /dev/chat. */
   DEV_CHAT?: string;
+  /** Khaya (GhanaNLP) key: Ghanaian-language translation, voice notes and voice replies. Unset: English only, no voice replies. */
+  KHAYA_API_KEY?: string;
   INBOX: Queue<Inbound>;
 }
 
@@ -70,6 +70,7 @@ app.post("/dev/chat", async (c) => {
     flow: async (_to, body) => void replies.push({ text: `[form] ${body}` }),
     image: async (_to, url, caption) => void replies.push({ text: `[image] ${caption ?? ""} ${url}` }),
     template: async (_to, name, params, payload) => void replies.push({ text: `[template ${name}] ${params.join(" · ")}`, buttons: [payload] }),
+    voice: async (_to, wav) => void replies.push({ text: `[voice note] ${wav.length} bytes` }),
     typing: async () => {},
   });
   return c.json(replies);
@@ -88,12 +89,13 @@ app.post("/dev/cron/:job", async (c) => {
     flow: async (to: string, text: string) => void sent.push({ to, text }),
     image: async (to: string, url: string) => void sent.push({ to, text: `[image] ${url}` }),
     template: async (to: string, name: string, params: string[], payload: string) => void sent.push({ to, text: `[template ${name}] ${params.join(" · ")}`, buttons: [payload] }),
+    voice: async (to: string, wav: Uint8Array) => void sent.push({ to, text: `[voice note] ${wav.length} bytes` }),
     typing: async () => {},
   };
   if (c.req.param("job") === "record") await recordTape(c.env);
-  else if (c.req.param("job") === "alerts") await checkPriceAlerts(c.env, send);
-  else if (c.req.param("job") === "news") await checkNews(c.env, send);
-  else await monthlyReminder(c.env, send);
+  else if (c.req.param("job") === "alerts") await checkPriceAlerts(c.env, localizedSender(c.env, send));
+  else if (c.req.param("job") === "news") await checkNews(c.env, localizedSender(c.env, send));
+  else await monthlyReminder(c.env, localizedSender(c.env, send));
   return c.json(sent);
 });
 
@@ -143,7 +145,8 @@ const NEWS_CHECK = "0 8,13 * * 1-5";
 export default {
   fetch: app.fetch,
   async scheduled(controller: ScheduledController, env: Env): Promise<void> {
-    const send = whatsappSender(env);
+    // Alerts, reminders and news go out in each investor's language.
+    const send = localizedSender(env, whatsappSender(env));
     if (controller.cron === PRICE_ALERTS) {
       await recordTape(env).catch((err) => console.error("recording failed", err));
       await prepareMarket(env);

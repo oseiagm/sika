@@ -8,6 +8,8 @@ export interface Inbound {
   text?: string;
   buttonId?: string;
   mediaId?: string;
+  /** A voice note already as 16 kHz WAV (the web page records it in the browser). */
+  wav?: Uint8Array;
   /** Answers from a WhatsApp Flow form. */
   form?: Record<string, string>;
 }

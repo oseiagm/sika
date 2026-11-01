@@ -9,7 +9,7 @@ This is how Sika talks to people on WhatsApp, and why it works that way.
 4. **Choose, don't compose.** Amounts, limits and goals are offered as options. Typing or speaking an answer still works at every step ("about 400 a month" is accepted).
 5. **Fixed code runs setup; the AI understands words.** The setup steps are a fixed sequence, so they are predictable and resumable. Muse Spark reads free-text answers and answers side questions, but it never decides what step comes next.
 6. **Forgiving.** A question asked mid-setup gets a short answer, then the same step is shown again. Tapping an old button just updates that answer. Every plan setting can be changed later from a list.
-7. **Safe.** Trades need Approve, as before. Deleting everything asks for confirmation.
+7. **Safe.** Sika never trades: it suggests, and the investor places orders with their own broker. Deleting everything asks for confirmation.
 8. **Resumable.** Progress is saved after every answer. If a message didn't arrive, the next message the user sends shows the current step again.
 
 ## Flow
@@ -27,7 +27,7 @@ Step 3 · What you own ─► [Yes, I own some] [No, starting fresh]
                     ▼
 Home  "You're all set" + summary  [Invest now] [My portfolio] [More options]
                     │
-Free chat ─► the agent answers, with the Menu list button underneath. Proposals carry [Approve] [Why?] [Reject].
+Free chat ─► the agent answers, with the Menu list button underneath. Suggestions carry [I bought it] [Why?] [Not now].
 ```
 
 ## The Menu (a list, available any time by sending "menu")

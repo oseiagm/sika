@@ -210,7 +210,7 @@ export const TRY_PAGE = /* html */ `<!doctype html>
   <section class="intro">
     <div class="brand"><span class="mark" aria-hidden="true">S</span>Sika</div>
     <h1>Investing, as simple as a chat.</h1>
-    <p class="lede">Sika helps you invest on the Ghana Stock Exchange. It plans with you, shows every charge, and only trades when you tap Approve.</p>
+    <p class="lede">Sika helps you invest on the Ghana Stock Exchange. It plans with you, suggests trades that fit your plan with every charge shown, and never trades for you.</p>
     <p class="say-label">Try saying</p>
     <div class="says" id="says">
       <button class="say" data-say="Hi">Hi 👋</button>
@@ -433,7 +433,11 @@ export const TRY_PAGE = /* html */ `<!doctype html>
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || "Sika didn't answer. Check your connection and try again.");
       typing(false);
-      for (const r of body.replies) add({ from: "them", ...r });
+      for (const r of body.replies) {
+        // Sika's voice note: a 16 kHz 16-bit WAV, so its length follows from its size.
+        if (typeof r.voice === "string") add({ from: "them", voice: Math.max(1, Math.round(((r.voice.length - 22) * 0.75 - 44) / 32000)), audio: r.voice });
+        else add({ from: "them", ...r });
+      }
       if (body.activity) { $("activity").href = body.activity; $("activity").hidden = false; store.set("sika.activity", body.activity); }
     } catch (err) {
       typing(false);

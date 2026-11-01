@@ -25,7 +25,7 @@ const DOMAIN_WORDS = [
   "dividend", "dividends", "gse", "exchange", "cedi", "cedis", "ghs", "ghc", "pesewa", "pesewas", "news", "plan", "mandate", "limit", "limits",
   "compare", "comparison", "versus", "vs", "follow", "unfollow", "following", "alert", "alerts", "profit", "loss", "gain", "bid",
   "spread", "order", "trade", "trading", "traded", "market", "holding", "holdings", "break-even", "breakeven", "stop-loss",
-  "take-profit", "approve", "proposal", "risk", "monthly", "budget", "broker", "ic securities", "earnings",
+  "take-profit", "suggestion", "suggest", "risk", "monthly", "budget", "broker", "ic securities", "earnings",
   "banks", "listed", "ipo", "rights issue", "bonus shares", "yield", "p/e", "valuation", "sika",
   // Twi / Pidgin
   "boɔ", "tɔ", "tɔn", "sɛn", "dwa", "mfasoɔ", "how much", "wey price", "make i buy",
@@ -96,7 +96,7 @@ export async function classifyScope(
     const verdict = match ? (JSON.parse(match[0]) as { verdict?: unknown }).verdict : undefined;
     return verdict === "off_topic" || verdict === "manipulation" ? verdict : "in_scope";
   } catch {
-    // The gate is a first line only: the agent's own rules and the code-enforced trade checks still apply.
+    // The gate is a first line only: the agent's own rules and the code-enforced plan checks still apply.
     return "in_scope";
   }
 }

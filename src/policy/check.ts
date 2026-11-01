@@ -38,7 +38,7 @@ export interface Verdict {
 const cedis = (value: number) => BigInt(Math.round(value * 100));
 
 /**
- * Deterministic checks between the model and execution. The model can propose anything;
+ * Deterministic checks between the model and the investor. The model can suggest anything;
  * only a proposal with no violations can be shown to the investor for approval.
  */
 export function check(p: Proposal, ctx: PolicyContext): Verdict {

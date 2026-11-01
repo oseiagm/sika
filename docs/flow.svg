@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 330" width="1200" height="330" font-family="Helvetica, Arial, sans-serif">
-  <title>How a Sika trade flows: the AI proposes, code decides, the investor approves</title>
+  <title>How a Sika suggestion flows: the AI suggests, code checks, the investor decides</title>
   <rect width="1200" height="330" fill="#eef2ee"/>
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -19,7 +19,7 @@
     <rect x="40" y="62" width="280" height="96" rx="12" fill="#ffffff" stroke="#14261d" stroke-width="1.5"/>
     <text x="60" y="94" font-weight="700">Suggests a trade</text>
     <text x="60" y="118" font-size="14" fill="#4d6157">Reads the plan, holdings, prices, news.</text>
-    <text x="60" y="138" font-size="14" fill="#4d6157">Can only call propose_trade.</text>
+    <text x="60" y="138" font-size="14" fill="#4d6157">Can only call suggest_trade.</text>
 
     <rect x="390" y="62" width="200" height="96" rx="12" fill="#ffffff" stroke="#14261d" stroke-width="1.5"/>
     <text x="408" y="94" font-weight="700">Prices it</text>
@@ -32,14 +32,14 @@
     <text x="648" y="138" font-size="14" fill="#4d6157">no loss sales, a counterparty</text>
 
     <rect x="886" y="62" width="274" height="96" rx="12" fill="#ffffff" stroke="#b7862a" stroke-width="2.5"/>
-    <text x="906" y="94" font-weight="700">Taps Approve</text>
-    <text x="906" y="118" font-size="14" fill="#4d6157">Signed proposal, every charge shown,</text>
-    <text x="906" y="138" font-size="14" fill="#4d6157">valid 30 minutes</text>
+    <text x="906" y="94" font-weight="700">Decides</text>
+    <text x="906" y="118" font-size="14" fill="#4d6157">Suggestion card, every charge shown;</text>
+    <text x="906" y="138" font-size="14" fill="#4d6157">places it with their own broker</text>
 
     <rect x="630" y="214" width="210" height="86" rx="12" fill="#ffffff" stroke="#1e7a46" stroke-width="2"/>
-    <text x="648" y="246" font-weight="700" fill="#1e7a46">Executes once</text>
-    <text x="648" y="270" font-size="14" fill="#4d6157">Re-checks price and plan,</text>
-    <text x="648" y="288" font-size="14" fill="#4d6157">fills on the live book</text>
+    <text x="648" y="246" font-weight="700" fill="#1e7a46">Records it once</text>
+    <text x="648" y="270" font-size="14" fill="#4d6157">After the I bought it tap: holdings,</text>
+    <text x="648" y="288" font-size="14" fill="#4d6157">budget and alerts stay right</text>
 
     <rect x="390" y="214" width="200" height="86" rx="12" fill="#ffffff" stroke="#b3261e" stroke-width="2"/>
     <text x="408" y="246" font-weight="700" fill="#b3261e">Blocked</text>
@@ -56,5 +56,5 @@
     <path d="M690 158 L690 186 L490 186 L490 210"/>
   </g>
   <text x="560" y="180" font-size="13" fill="#b3261e">fails a check</text>
-  <text x="1032" y="214" font-size="13" fill="#4d6157">Approve tap</text>
+  <text x="1032" y="214" font-size="13" fill="#4d6157">I bought it</text>
 </svg>

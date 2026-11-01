@@ -53,7 +53,9 @@ describe("menu", () => {
     expect(menuAction({ text: "1" }, true, true)).toBe("invest");
     expect(menuAction({ text: "1" }, true, false)).toBe("continue");
     expect(menuAction({ text: "2" }, false, true)).toBeNull();
-    expect(menuAction({ text: "8" }, true, true)).toBe("profile");
+    expect(menuAction({ text: "8" }, true, true)).toBe("settings");
+    expect(menuAction({ text: "/profile" }, false, true)).toBe("profile");
+    expect(menuAction({ text: "/language" }, false, false)).toBe("language");
     expect(menuAction({ text: "/plan" }, false, true)).toBe("mandate");
     expect(menuAction({ text: "/unknown" }, false, true)).toBeNull();
     expect(menuAction({ text: "buy 2 shares" }, true, true)).toBeNull();

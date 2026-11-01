@@ -2,7 +2,7 @@ import type OpenAI from "openai";
 import { z } from "zod";
 import type { Db, User } from "../db";
 import { charges, ghs, lowestSellPrice, maxSharesFor, percent, toPesewas } from "../fees/engine";
-import { propose } from "../intents/service";
+import { suggest, suggestionButtons } from "../intents/service";
 import { fingerprint } from "../intents/sign";
 import { Mandate, mandateCard } from "../mandate/schema";
 import { compareStocks } from "../market/compare";
@@ -23,7 +23,6 @@ export interface ToolContext {
   quotes: Map<string, Quote>;
   meta: OpenAI;
   model: string;
-  intentKey: string;
   outbox: Outgoing[];
   /** Links tools returned this turn: the only ones the agent may show (see runAgent). */
   sources: Set<string>;
@@ -59,7 +58,7 @@ const Args = {
   save_mandate_draft: z.object({ mandate: Mandate }),
   record_holdings: z.object({ holdings: z.array(HoldingInputSchema).min(1).max(30) }),
   remove_holding: z.object({ symbol: z.string() }),
-  propose_trade: z.object({
+  suggest_trade: z.object({
     side: z.enum(["BUY", "SELL"]),
     symbol: z.string(),
     shares: optional(z.coerce.number().int().positive()).describe("Whole shares. Leave out for a BUY sized by cashCedis"),
@@ -85,8 +84,8 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   record_holdings:
     "Save what the user says they own. Use the ticker, whole shares, and either the price per share or the total they paid (null if they don't know). Sika shows the list with Looks right/Fix buttons. Afterwards, stop and wait.",
   remove_holding: "Remove a holding the user says they sold or never had.",
-  propose_trade:
-    "Propose a trade for the investor to approve. Sika checks it against their mandate (budget, per-order and per-stock limits, never-buy list, never sell at a loss). If it passes, Sika sends a proposal card with Approve/Why?/Reject buttons and you should stop with one short line. If it is blocked, you get the reasons: explain them plainly and, if sensible, propose a version that fits. Execution is simulated and happens only when the investor taps Approve.",
+  suggest_trade:
+    "Suggest a trade the investor could place with their own broker. Sika prices it from the live order book and checks it against their plan (budget, per-order and per-stock limits, never-buy list, never sell at a loss). If it fits, Sika sends a suggestion card with every charge and I bought it/Why?/Not now buttons; stop with one short line. If it doesn't fit, you get the reasons: explain them plainly and, if sensible, suggest a version that fits. Sika never places orders.",
 };
 
 export const TOOL_DEFS: OpenAI.Chat.Completions.ChatCompletionTool[] = (Object.keys(Args) as ToolName[]).map((name) => {
@@ -244,28 +243,24 @@ const handlers: { [K in ToolName]: (args: z.infer<(typeof Args)[K]>, ctx: ToolCo
     return { shown: "List with Looks right/Fix buttons will be sent after your message. It is NOT saved until they tap Looks right. Keep your message to one short line, e.g. 'Please check this:'." };
   },
 
-  async propose_trade({ side, symbol, shares, cashCedis, rationale }, ctx) {
+  async suggest_trade({ side, symbol, shares, cashCedis, rationale }, ctx) {
     const q = await live(ctx, quoteFor(ctx, symbol));
     let qty: bigint;
     if (side === "BUY" && cashCedis != null) {
-      if (q.ask === null) return { proposed: false, error: `Nobody is selling ${q.symbol} right now.` };
+      if (q.ask === null) return { suggested: false, error: `Nobody is selling ${q.symbol} right now.` };
       qty = maxSharesFor(cedisToPesewas(cashCedis), q.ask);
     }
     else if (shares != null) qty = BigInt(shares);
     else throw new Error("Give shares, or cashCedis for a BUY");
-    if (qty === 0n) return { proposed: false, error: "That amount doesn't buy one share after charges." };
+    if (qty === 0n) return { suggested: false, error: "That amount doesn't buy one share after charges." };
 
-    const result = await propose({ db: ctx.db, user: ctx.user, quotes: ctx.quotes, intentKey: ctx.intentKey }, { side, symbol: q.symbol, shares: qty, rationale });
-    if (!result.ok) return { proposed: false, blockedBy: result.violations, warnings: result.warnings };
+    const result = await suggest({ db: ctx.db, user: ctx.user, quotes: ctx.quotes }, { side, symbol: q.symbol, shares: qty, rationale });
+    if (!result.ok) return { suggested: false, doesntFitPlan: result.violations, warnings: result.warnings };
     ctx.outbox.push({
       text: result.card,
-      buttons: [
-        { id: `intent:approve:${result.intent.id}`, title: "Approve" },
-        { id: `intent:why:${result.intent.id}`, title: "Why?" },
-        { id: `intent:reject:${result.intent.id}`, title: "Reject" },
-      ],
+      buttons: suggestionButtons(result.intent),
     });
-    return { proposed: true, shares: qty.toString(), totalToPayOrReceive: ghs(result.intent.net), shown: "Proposal card sent after your message. Keep your message to one short line; don't repeat the numbers." };
+    return { suggested: true, shares: qty.toString(), expectedTotal: ghs(result.intent.net), shown: "Suggestion card sent after your message. Keep your message to one short line; don't repeat the numbers." };
   },
 
   async remove_holding({ symbol }, ctx) {

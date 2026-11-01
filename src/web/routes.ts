@@ -4,7 +4,7 @@ import { handle, type Sender } from "../handle";
 import type { Env } from "../index";
 import { fetchQuotes } from "../market/quotes";
 import { prepareMarket } from "../market/replay";
-import { transcribe } from "../voice/transcribe";
+import { toPcm16Wav } from "../voice/oggOpus";
 import { isVoiceWav, MAX_VOICE_BYTES } from "../voice/wav";
 import type { ListRow } from "../whatsapp/client";
 import type { Inbound } from "../whatsapp/webhook";
@@ -29,6 +29,14 @@ interface Reply {
   buttons?: { id: string; title: string }[];
   list?: { button: string; rows: ListRow[] };
   image?: string;
+  /** Sika's voice note, as a data: URL of a 16 kHz WAV (every browser plays WAV; Safari can't play Ogg Opus). */
+  voice?: string;
+}
+
+function dataUrl(bytes: Uint8Array, mime: string): string {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return `data:${mime};base64,${btoa(bin)}`;
 }
 
 export const web = new Hono<{ Bindings: Env }>();
@@ -48,13 +56,13 @@ web.get("/activity/:token", async (c) => {
   const waId = await db.userByViewToken(token);
   if (!waId) return c.notFound();
   if (c.req.query("format") === "json") {
-    // For the red-team script: every intent, whether a human approved it, and whether it filled.
+    // For the red-team script: every suggestion, whether the investor tapped I bought it, and what was recorded.
     const trail = await db.auditTrail(waId, 1000);
-    const approved = new Set(trail.filter((e) => e.kind === "approved").map((e) => (e.detail as { id: string }).id));
+    const approved = new Set(trail.filter((e) => e.kind === "recorded").map((e) => (e.detail as { id: string }).id));
     const fills = await db.fillsFor(waId);
     const user = await db.user(waId);
     return c.json({
-      intents: (await db.intentsFor(waId)).map((i) => ({ id: i.id, side: i.side, symbol: i.symbol, shares: String(i.shares), net: String(i.net), status: i.status, approvedByTap: approved.has(i.id), checksPassed: i.verdict.ok })),
+      intents: (await db.intentsFor(waId)).map((i) => ({ id: i.id, side: i.side, symbol: i.symbol, shares: String(i.shares), net: String(i.net), status: i.status, recordedByTap: approved.has(i.id), checksPassed: i.verdict.ok })),
       fills: fills.map((f) => ({ intentId: f.intentId, shares: f.shares, net: f.net })),
       blocked: trail.filter((e) => e.kind === "policy" && (e.detail as { verdict?: { ok: boolean } }).verdict?.ok === false).length,
       mandate: user.mandate,
@@ -88,6 +96,7 @@ async function runTurn(c: Context<{ Bindings: Env }>, db: Db, session: string, m
     flow: async (_to, t) => void replies.push({ text: t }),
     image: async (_to, url, caption) => void replies.push({ text: caption ?? "", image: url }),
     template: async (_to, _name, params) => void replies.push({ text: params.join(" · ") }),
+    voice: async (_to, wav) => void replies.push({ text: "", voice: dataUrl(toPcm16Wav(wav), "audio/wav") }),
     typing: async () => {},
   };
   const from = `web-${session}`;
@@ -117,9 +126,8 @@ web.post("/api/try/chat", async (c) => {
 });
 
 /**
- * A voice note from the try page. The browser records it and converts it to a 16 kHz WAV, so the
- * server goes straight to Muse Voice Transcribe (WhatsApp's Ogg Opus notes are decoded first instead).
- * Like on WhatsApp, Sika first shows what it heard, then answers it.
+ * A voice note from the try page. The browser records it and converts it to a 16 kHz WAV, so it skips
+ * the Ogg Opus decoding WhatsApp notes need; from there it's handled exactly like a WhatsApp voice note.
  */
 web.post("/api/try/voice", async (c) => {
   if (!sameOrigin(c)) return c.json({ error: "Not allowed." }, 403);
@@ -132,17 +140,9 @@ web.post("/api/try/voice", async (c) => {
   const db = new Db(c.env.DB);
   if (!(await allow(c, db, session))) return c.json({ error: LIMIT_REACHED }, 429);
 
-  let transcript = "";
-  try {
-    transcript = (await transcribe(c.env.MODEL_API_KEY, wav)).slice(0, 500);
-  } catch (err) {
-    console.error("web voice failed", err);
-  }
-  await db.audit(`web-${session}`, "voice", { bytes: wav.length, transcript, channel: "web" });
-  if (!transcript) {
-    return c.json({ transcript: "", replies: [{ text: "Sorry, I couldn't make that out. Could you try again, or type it?" }], activity: `/activity/${await db.viewToken(`web-${session}`)}` });
-  }
-  const replies: Reply[] = [{ text: `🎙️ _"${transcript}"_` }];
-  const activity = await runTurn(c, db, session, { kind: "text", text: transcript }, replies);
-  return c.json({ transcript, replies, activity });
+  // The same path as a WhatsApp voice note: transcribed in the investor's language, echoed, answered,
+  // and answered with a voice note too when their setting asks for one.
+  const replies: Reply[] = [];
+  const activity = await runTurn(c, db, session, { kind: "audio", wav }, replies);
+  return c.json({ replies, activity });
 });

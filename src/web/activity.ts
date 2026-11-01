@@ -48,21 +48,18 @@ interface Attempt {
 
 type Outcome = { key: "filled" | "blocked" | "waiting" | "declined"; label: string };
 
+/** Suggestion statuses: PROPOSED = open, FILLED = the investor recorded doing it, REJECTED = "Not now", EXPIRED = replaced. */
 function outcome(blocked: boolean, intent: Intent | undefined): Outcome {
-  if (blocked) return { key: "blocked", label: "Blocked by plan" };
+  if (blocked) return { key: "blocked", label: "Didn't fit the plan" };
   switch (intent?.status) {
     case "FILLED":
-      return { key: "filled", label: "Filled" };
+      return { key: "filled", label: intent.side === "BUY" ? "Bought" : "Sold" };
     case "PROPOSED":
-      return { key: "waiting", label: "Waiting for approval" };
+      return { key: "waiting", label: "Suggested" };
     case "REJECTED":
-      return { key: "declined", label: "Rejected" };
-    case "APPROVED":
-      return { key: "waiting", label: "Approved" };
-    case "FAILED":
-      return { key: "declined", label: "Not filled" };
+      return { key: "declined", label: "Not now" };
     default:
-      return { key: "declined", label: "Expired" };
+      return { key: "declined", label: "Replaced" };
   }
 }
 
@@ -81,17 +78,18 @@ export async function activityPage(db: Db, waId: string, quotes: Map<string, Quo
   await refreshLive(quotes, holdings.map((h) => h.symbol));
   const valued = valueAll(holdings, quotes);
 
-  // Each policy check is one attempt; a "proposed" right after it links it to the trade it became.
+  // Each plan check is one attempt; a "suggested" right after it links it to the suggestion it became.
   const attempts: Attempt[] = [];
   let modelCalls = 0;
   let inTokens = 0;
   let outTokens = 0;
-  const approvals = new Map<string, string>();
+  const recorded = new Map<string, string>();
   for (const e of trail) {
     const d = e.detail as any;
     if (e.kind === "policy" && d?.order) attempts.push({ at: e.at, order: d.order, price: d.price, verdict: d.verdict });
-    if (e.kind === "proposed" && attempts.length) attempts[attempts.length - 1]!.proposed = { id: d.id, book: d.book };
-    if (e.kind === "approved") approvals.set(d.id, e.at);
+    // "proposed"/"approved" are the older names, from before Sika stopped simulating trades.
+    if ((e.kind === "suggested" || e.kind === "proposed") && attempts.length) attempts[attempts.length - 1]!.proposed = { id: d.id, book: d.book };
+    if (e.kind === "recorded" || e.kind === "approved") recorded.set(d.id, e.at);
     if (e.kind === "model") {
       modelCalls++;
       inTokens += d?.usage?.prompt_tokens ?? 0;
@@ -122,7 +120,7 @@ export async function activityPage(db: Db, waId: string, quotes: Map<string, Quo
 
       const steps: string[] = [];
       const reason = intent?.rationale ?? a.order.rationale;
-      if (reason) steps.push(`<li>${icon("spark")}<div><h4>Sika's AI put it forward</h4><blockquote>${esc(reason)}</blockquote></div></li>`);
+      if (reason) steps.push(`<li>${icon("spark")}<div><h4>Sika's AI suggested it</h4><blockquote>${esc(reason)}</blockquote></div></li>`);
 
       steps.push(
         `<li>${icon("book")}<div><h4>Priced from IC's ${book?.live ? "live " : ""}order book</h4>${
@@ -146,21 +144,21 @@ export async function activityPage(db: Db, waId: string, quotes: Map<string, Quo
 
       if (!blocked && intent) {
         steps.push(
-          `<li>${icon("lock")}<div><h4>Signed and sent for approval</h4><p>${buy ? "Buy" : "Sell"} ${esc(intent.shares)} ${esc(intent.symbol)}, ${money(intent.net)} ${buy ? "in total" : "after charges"}. Locked so nothing can change before the tap; valid for 30 minutes.</p></div></li>`,
+          `<li>${icon("lock")}<div><h4>Shown to the investor</h4><p>${buy ? "Buy" : "Sell"} ${esc(intent.shares)} ${esc(intent.symbol)}, about ${money(intent.net)} ${buy ? "in total" : "after charges"}, with every charge. Sika doesn't place orders; the investor decides and uses their own broker.</p></div></li>`,
         );
-        const approvedAt = approvals.get(intent.id);
+        const recordedAt = recorded.get(intent.id);
         const decision =
           intent.status === "REJECTED"
-            ? "The investor rejected it. Nothing was traded."
-            : approvedAt
-              ? `The investor tapped Approve at ${esc(when(approvedAt))}.`
+            ? "The investor tapped Not now."
+            : recordedAt
+              ? `The investor tapped ${buy ? "I bought it" : "I sold it"} at ${esc(when(recordedAt))}.`
               : intent.status === "PROPOSED"
-                ? "Waiting. Nothing happens unless the investor taps Approve."
-                : "It expired without a decision. Nothing was traded.";
-        steps.push(`<li class="${approvedAt ? "" : "muted"}">${icon(approvedAt ? "hand" : "clock")}<div><h4>The investor's decision</h4><p>${decision}</p></div></li>`);
+                ? "Open. The investor hasn't said whether they placed it."
+                : "Replaced by a newer suggestion for this stock.";
+        steps.push(`<li class="${recordedAt ? "" : "muted"}">${icon(recordedAt ? "hand" : "clock")}<div><h4>The investor's decision</h4><p>${decision}</p></div></li>`);
         if (fill) {
           steps.push(
-            `<li class="good">${icon("check")}<div><h4>Filled (simulated)</h4><dl class="book fill"><div><dt>Shares</dt><dd>${esc(fill.shares)}</dd></div><div><dt>Price</dt><dd>${money(fill.price)}</dd></div><div><dt>Charges</dt><dd>${money(fill.charges)}</dd></div><div><dt>${buy ? "Paid" : "Received"}</dt><dd>${money(fill.net)}</dd></div></dl></div></li>`,
+            `<li class="good">${icon("check")}<div><h4>Added to holdings</h4><dl class="book fill"><div><dt>Shares</dt><dd>${esc(fill.shares)}</dd></div><div><dt>Price</dt><dd>${money(fill.price)}</dd></div><div><dt>Charges</dt><dd>${money(fill.charges)}</dd></div><div><dt>${buy ? "Paid" : "Received"}</dt><dd>${money(fill.net)}</dd></div></dl></div></li>`,
           );
         }
       }
@@ -325,7 +323,7 @@ export async function activityPage(db: Db, waId: string, quotes: Map<string, Quo
 <main>
   <div class="brand"><span class="mark" aria-hidden="true">S</span>Sika</div>
   <h1>${esc(title)}</h1>
-  <p class="lede">Every step behind each trade: what Sika suggested, how it was checked, and what the investor decided.</p>
+  <p class="lede">Every step behind each suggestion: what Sika's AI suggested, how it was priced and checked against the plan, and what the investor did.</p>
   <dl class="summary">
     <div><dt>Profile</dt><dd>${profile ? esc(profile.risk[0]!.toUpperCase() + profile.risk.slice(1)) : "Not set"}</dd></div>
     <div><dt>Plan</dt><dd>${m ? `${esc(m.goal)}${m.monthlyContributionCedis ? `, GHS ${esc(m.monthlyContributionCedis.toLocaleString("en-GH"))}/mo` : ""}` : "Not set"}</dd></div>
@@ -335,14 +333,14 @@ export async function activityPage(db: Db, waId: string, quotes: Map<string, Quo
 
   <section class="block">
     <div class="block-head">
-      <h2>Trades and attempts</h2>
+      <h2>Suggestions</h2>
       ${
         attempts.length
-          ? `<div class="filter" role="group" aria-label="Filter trades"><button type="button" data-f="all" aria-pressed="true">All ${attempts.length}</button><button type="button" data-f="filled" aria-pressed="false">Filled ${counts.filled}</button><button type="button" data-f="blocked" aria-pressed="false">Blocked ${counts.blocked}</button></div>`
+          ? `<div class="filter" role="group" aria-label="Filter suggestions"><button type="button" data-f="all" aria-pressed="true">All ${attempts.length}</button><button type="button" data-f="filled" aria-pressed="false">Bought or sold ${counts.filled}</button><button type="button" data-f="blocked" aria-pressed="false">Didn't fit ${counts.blocked}</button></div>`
           : ""
       }
     </div>
-    ${cases || `<p class="empty">No trades yet. Ask Sika to invest this month's money, or try to break a limit.</p>`}
+    ${cases || `<p class="empty">No suggestions yet. Ask Sika to invest this month's money, or try to break a limit.</p>`}
   </section>
 
   <section class="block">

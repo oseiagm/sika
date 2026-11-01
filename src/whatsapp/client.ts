@@ -133,3 +133,18 @@ export function sendTemplate(
     },
   });
 }
+
+/**
+ * A voice note: uploads mono Ogg Opus audio, then sends it with voice: true, so WhatsApp shows the
+ * voice-note bubble (other formats arrive as a plain audio file).
+ */
+export async function sendVoice(config: WhatsAppConfig, to: string, ogg: Uint8Array): Promise<void> {
+  const form = new FormData();
+  form.append("messaging_product", "whatsapp");
+  form.append("type", "audio/ogg");
+  form.append("file", new Blob([ogg], { type: "audio/ogg; codecs=opus" }), "sika.ogg");
+  const res = await fetch(`${GRAPH}/${config.phoneNumberId}/media`, { method: "POST", headers: { authorization: `Bearer ${config.accessToken}` }, body: form });
+  if (!res.ok) throw new Error(`WhatsApp media upload failed: HTTP ${res.status} ${await res.text()}`);
+  const { id } = (await res.json()) as { id: string };
+  return send(config, { to, type: "audio", audio: { id, voice: true } });
+}

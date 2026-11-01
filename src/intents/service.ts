@@ -1,24 +1,25 @@
-import type { Broker } from "../broker/paper";
 import type { Db, Intent, User } from "../db";
-import { ghs, lowestSellPrice, percent, type Charges } from "../fees/engine";
+import { charges, ghs, lowestSellPrice, percent, type Charges } from "../fees/engine";
 import type { Side } from "../fees/schedule";
 import { withLiveBook, type Quote } from "../market/quotes";
 import { check, type Verdict } from "../policy/check";
-import { sign, verify } from "./sign";
 
-/** An approval is only good for this long; prices move. */
-const TTL_MINUTES = 30;
-/** If the price moved more than this since the proposal, the investor must approve again. */
-const MAX_DRIFT_BPS = 200n;
+/**
+ * Sika never places orders. It suggests a trade that fits the investor's plan, priced from the live
+ * order book with every charge shown; the investor places it with their own broker and then taps
+ * "I bought it" (or "I sold it") so Sika can keep their holdings and monthly budget up to date.
+ *
+ * Suggestions are stored in the `intents` table. Status: PROPOSED = suggested and open,
+ * FILLED = the investor recorded doing it, REJECTED = "Not now", EXPIRED = replaced by a newer one.
+ */
 
 export interface Deps {
   db: Db;
   user: User;
   quotes: Map<string, Quote>;
-  intentKey: string;
 }
 
-function chargesBlock(c: Charges): string[] {
+export function chargesBlock(c: Charges): string[] {
   return [
     `Gross: ${ghs(c.gross)}`,
     ...c.lines.map((l) => `  ${l.name}: ${ghs(l.pesewas)}`),
@@ -30,30 +31,40 @@ function chargesBlock(c: Charges): string[] {
 const book = (q: Quote) =>
   `Buyers ${q.bid ? ghs(q.bid) : "none"} · Sellers ${q.ask ? ghs(q.ask) : "none"} · Last trade ${ghs(q.last)}${q.recordedAt ? ` (recorded ${q.recordedAt.slice(0, 16)} GMT)` : q.live ? " (live)" : ""}`;
 
-export function proposalCard(i: Pick<Intent, "side" | "symbol" | "shares" | "price">, verdict: Verdict, quote: Quote): string {
+export function suggestionCard(i: Pick<Intent, "side" | "symbol" | "shares" | "price">, verdict: Verdict, quote: Quote): string {
   const c = verdict.preview!;
+  const buy = i.side === "BUY";
   const lines = [
-    `*Proposed: ${i.side === "BUY" ? "Buy" : "Sell"} ${i.shares} ${i.symbol}* @ ${ghs(i.price)}`,
+    `*Suggestion: ${buy ? "buy" : "sell"} ${i.shares} ${i.symbol}* at about ${ghs(i.price)}`,
     `_${quote.name}_`,
     book(quote),
     "",
+    `Expected with IC Securities' charges:`,
     ...chargesBlock(c),
   ];
-  if (i.side === "BUY") lines.push(`Break-even sell price: ${ghs(lowestSellPrice(i.shares, c.net))}`);
-  lines.push("", `✅ Passed ${verdict.passed.length} plan checks`);
+  if (buy) lines.push(`Break-even sell price: ${ghs(lowestSellPrice(i.shares, c.net))}`);
+  lines.push("", `✅ Fits your plan (${verdict.passed.length} checks)`);
   for (const w of verdict.warnings) lines.push(`⚠️ ${w.message}`);
-  lines.push("", `Simulated trade. Valid ${TTL_MINUTES} min. Nothing happens unless you tap Approve.`);
+  lines.push(
+    "",
+    `Sika doesn't place orders. If you want this, place it with your broker; prices move, so check the live price first. Then tap *${buy ? "I bought it" : "I sold it"}* and I'll update your holdings.`,
+  );
   return lines.join("\n");
 }
 
-export type ProposeResult =
+/** The buttons under a suggestion. */
+export const suggestionButtons = (i: Pick<Intent, "id" | "side">) => [
+  { id: `sug:done:${i.id}`, title: i.side === "BUY" ? "I bought it" : "I sold it" },
+  { id: `sug:why:${i.id}`, title: "Why?" },
+  { id: `sug:skip:${i.id}`, title: "Not now" },
+];
+
+export type SuggestResult =
   | { ok: true; intent: Intent; card: string }
   | { ok: false; violations: Verdict["violations"]; warnings: Verdict["warnings"] };
 
-export async function propose(
-  d: Deps,
-  order: { side: Side; symbol: string; shares: bigint; rationale: string },
-): Promise<ProposeResult> {
+/** Prices a trade from the live order book and checks it against the plan; only a trade that fits is suggested. */
+export async function suggest(d: Deps, order: { side: Side; symbol: string; shares: bigint; rationale: string }): Promise<SuggestResult> {
   const snapshot = d.quotes.get(order.symbol);
   const quote = snapshot ? await withLiveBook(snapshot) : undefined;
   if (quote) d.quotes.set(order.symbol, quote);
@@ -71,16 +82,28 @@ export async function propose(
   await d.db.audit(d.user.waId, "policy", { order, price, verdict });
   if (!verdict.ok || !quote || !verdict.preview) return { ok: false, violations: verdict.violations, warnings: verdict.warnings };
 
+  // A new suggestion for a stock replaces any still open for it.
   await d.db.expireOpenIntents(d.user.waId, order.symbol);
-  const expiresAt = new Date(Date.now() + TTL_MINUTES * 60_000).toISOString();
-  const fields = { id: crypto.randomUUID(), waId: d.user.waId, side: order.side, symbol: order.symbol, shares: order.shares, price, net: verdict.preview.net, expiresAt };
-  const intent: Intent = { ...fields, rationale: order.rationale, verdict, signature: await sign(fields, d.intentKey), status: "PROPOSED" };
+  const intent: Intent = {
+    id: crypto.randomUUID(),
+    waId: d.user.waId,
+    side: order.side,
+    symbol: order.symbol,
+    shares: order.shares,
+    price,
+    net: verdict.preview.net,
+    rationale: order.rationale,
+    verdict,
+    signature: "",
+    status: "PROPOSED",
+    expiresAt: new Date(Date.now() + 7 * 86_400_000).toISOString(),
+  };
   await d.db.createIntent(intent);
-  await d.db.audit(d.user.waId, "proposed", {
+  await d.db.audit(d.user.waId, "suggested", {
     id: intent.id, side: intent.side, symbol: intent.symbol, shares: intent.shares, price, net: intent.net,
     book: { bid: quote.bid, ask: quote.ask, last: quote.last, live: quote.live },
   });
-  return { ok: true, intent, card: proposalCard(intent, verdict, quote) };
+  return { ok: true, intent, card: suggestionCard(intent, verdict, quote) };
 }
 
 export function whyCard(i: Intent): string {
@@ -91,90 +114,49 @@ export function whyCard(i: Intent): string {
     "*Plan checks passed*",
     ...i.verdict.passed.map((r) => `✅ ${r}`),
     ...i.verdict.warnings.map((w) => `⚠️ ${w.message}`),
-  ].join("\n");
-}
-
-function contractNote(i: Intent, shares: bigint, c: Charges, partial: boolean, note?: string): string {
-  return [
-    `*✅ ${i.side === "BUY" ? "Bought" : "Sold"} ${shares} ${i.symbol}* (simulated)`,
-    `Price: ${ghs(c.price)}`,
-    ...chargesBlock(c),
-    ...(partial ? [`Only ${shares} of ${i.shares} shares filled: that's all that traded today.`] : []),
-    ...(note ? [note] : []),
     "",
-    `Ref: ${i.id.slice(0, 8)}`,
+    "This is information within your own plan, not personal investment advice.",
   ].join("\n");
 }
 
-export type DecideResult = { message: string };
+export type Recorded = { ok: true; message: string; firstBuy: boolean } | { ok: false; message: string };
 
-export async function approve(d: Deps, broker: Broker, id: string): Promise<DecideResult> {
+/**
+ * "I bought it" / "I sold it": records what the investor says they did, at the suggested price, so
+ * holdings and the monthly budget stay right. Each suggestion is recorded at most once.
+ */
+export async function recordDone(d: Deps, id: string): Promise<Recorded> {
   const i = await d.db.intent(d.user.waId, id);
-  if (!i) return { message: "I can't find that proposal." };
-  if (i.status !== "PROPOSED") return { message: `That proposal is already ${i.status.toLowerCase()}.` };
-  if (!(await verify(i, i.signature, d.intentKey))) {
-    await d.db.transition(i.id, "PROPOSED", "FAILED");
-    await d.db.audit(d.user.waId, "signature_failed", { id });
-    return { message: "That proposal failed its integrity check, so I've cancelled it." };
-  }
-  if (Date.parse(i.expiresAt) < Date.now()) {
-    await d.db.transition(i.id, "PROPOSED", "EXPIRED");
-    return { message: "That proposal has expired. Ask me again for a fresh one at today's price." };
-  }
-
-  const snapshot = d.quotes.get(i.symbol);
-  if (!snapshot) return { message: `I can't get a price for ${i.symbol} right now. Try again shortly.` };
-  const quote = await withLiveBook(snapshot);
-  d.quotes.set(i.symbol, quote);
-  const now = i.side === "BUY" ? quote.ask : quote.bid;
-  if (now === null) {
-    await d.db.transition(i.id, "PROPOSED", "EXPIRED");
-    return { message: i.side === "BUY" ? `Nobody is selling ${i.symbol} right now, so I've cancelled this. Ask me again later.` : `Nobody is bidding for ${i.symbol} right now, so I've cancelled this. Ask me again later.` };
-  }
-  const drift = ((now - i.price) * 10_000n) / i.price;
-  if (drift > MAX_DRIFT_BPS || drift < -MAX_DRIFT_BPS) {
-    await d.db.transition(i.id, "PROPOSED", "EXPIRED");
-    return { message: `The ${i.side === "BUY" ? "best offer" : "best bid"} for ${i.symbol} moved from ${ghs(i.price)} to ${ghs(now)} since I proposed this, so I've cancelled it. Ask me again for a fresh proposal.` };
-  }
-
-  // Re-check against the mandate now: holdings or this month's spending may have changed since the proposal.
+  if (!i) return { ok: false, message: "I can't find that suggestion." };
+  if (i.status === "FILLED") return { ok: false, message: "Already added to your holdings." };
+  if (i.status === "EXPIRED") return { ok: false, message: `That suggestion was replaced by a newer one for ${i.symbol}. Use the latest one, or tell me what you bought and I'll add it.` };
   const holdings = await d.db.holdings(d.user.waId);
-  const recheck = check(
-    { side: i.side, symbol: i.symbol, shares: i.shares, price: now },
-    { mandate: d.user.mandate, mandateConfirmed: d.user.mandateConfirmed, holdings, quotes: d.quotes, boughtThisMonth: await d.db.boughtThisMonth(d.user.waId) },
-  );
-  if (!recheck.ok) {
-    await d.db.transition(i.id, "PROPOSED", "EXPIRED");
-    await d.db.audit(d.user.waId, "policy", { id, recheck });
-    return { message: `This no longer fits your plan:\n${recheck.violations.map((v) => `• ${v.message}`).join("\n")}` };
+  const held = holdings.find((h) => h.symbol === i.symbol);
+  if (i.side === "SELL" && (!held || held.shares < i.shares)) {
+    await d.db.transition(i.id, i.status, "EXPIRED");
+    return { ok: false, message: `Your holdings show ${held?.shares ?? 0n} ${i.symbol} shares, fewer than this sale. Tell me what you actually sold and I'll fix your holdings.` };
   }
-
-  if (!(await d.db.transition(i.id, "PROPOSED", "APPROVED"))) return { message: "That proposal was already handled." };
-  await d.db.audit(d.user.waId, "approved", { id });
-
-  // Limit: buys at most the drift allowance above the proposed price, sells at most that far below.
-  const allowance = (i.price * MAX_DRIFT_BPS) / 10_000n;
-  const execution = await broker.execute(
-    { side: i.side, symbol: i.symbol, shares: i.shares, limit: i.side === "BUY" ? i.price + allowance : i.price - allowance },
-    quote,
-  );
-  if (!execution.filled) {
-    await d.db.transition(i.id, "APPROVED", "FAILED");
-    await d.db.audit(d.user.waId, "not_filled", { id, reason: execution.reason });
-    return { message: `Not filled: ${execution.reason}` };
-  }
-  await d.db.recordFill(
-    { intentId: i.id, waId: d.user.waId, side: i.side, symbol: i.symbol, shares: execution.shares, price: execution.price, charges: execution.charges },
-    holdings.find((h) => h.symbol === i.symbol),
-  );
-  await d.db.audit(d.user.waId, "filled", { id, shares: execution.shares, price: execution.price, net: execution.charges.net });
-  return { message: contractNote(i, execution.shares, execution.charges, execution.partial, execution.note) };
+  // PROPOSED or REJECTED ("Not now", then they did it anyway) → recorded, exactly once.
+  if (!(await d.db.transition(i.id, i.status, "FILLED"))) return { ok: false, message: "Already added to your holdings." };
+  const c = charges(i.side, i.shares, i.price);
+  await d.db.recordFill({ intentId: i.id, waId: d.user.waId, side: i.side, symbol: i.symbol, shares: i.shares, price: i.price, charges: c }, held);
+  await d.db.audit(d.user.waId, "recorded", { id, side: i.side, symbol: i.symbol, shares: i.shares, price: i.price, net: c.net });
+  const firstBuy = i.side === "BUY" && (await d.db.fillsFor(d.user.waId)).length === 1;
+  return {
+    ok: true,
+    firstBuy,
+    message: [
+      `*✅ ${i.side === "BUY" ? "Added to" : "Updated"} your holdings*`,
+      `${i.side === "BUY" ? "Bought" : "Sold"} ${i.shares} ${i.symbol} at ${ghs(i.price)}: ${ghs(c.net)} ${i.side === "BUY" ? "with charges" : "after charges"}.`,
+      "",
+      "Different price or number of shares? Tap *Fix it* and tell me what your broker's contract note says.",
+    ].join("\n"),
+  };
 }
 
-export async function reject(d: Deps, id: string): Promise<DecideResult> {
+export async function dismiss(d: Deps, id: string): Promise<string> {
   const i = await d.db.intent(d.user.waId, id);
-  if (!i) return { message: "I can't find that proposal." };
-  const ok = await d.db.transition(i.id, "PROPOSED", "REJECTED");
-  if (ok) await d.db.audit(d.user.waId, "rejected", { id });
-  return { message: ok ? "Rejected. Nothing was traded." : "That proposal was already handled." };
+  if (!i) return "I can't find that suggestion.";
+  if (await d.db.transition(i.id, "PROPOSED", "REJECTED")) await d.db.audit(d.user.waId, "dismissed", { id });
+  return "Okay, no problem. Ask me any time for another suggestion.";
 }

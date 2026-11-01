@@ -1,53 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { PaperBroker } from "../src/broker/paper";
+import { charges } from "../src/fees/engine";
+import { suggestionButtons, suggestionCard } from "../src/intents/service";
 import { applyDepth, markPrice, parseIcFeed, type Quote } from "../src/market/quotes";
-import { sign, verify } from "../src/intents/sign";
 
 const quote = (over: Partial<Quote> = {}): Quote => ({ symbol: "MTNGH", name: "MTN", last: 674n, prevClose: 674n, bid: 670n, ask: 674n, bidVolume: 5_000, askVolume: 5_000, live: true, volume: 10_000, quality: "DELAYED", tradable: true, ...over });
 
-describe("PaperBroker", () => {
-  const broker = new PaperBroker();
+describe("suggestion card", () => {
+  const verdict = { ok: true, violations: [], warnings: [], passed: ["mandate", "known stock", "max per order"], preview: charges("BUY", 72n, 674n) };
 
-  it("buys at the best ask with exact charges", async () => {
-    const e = await broker.execute({ side: "BUY", symbol: "MTNGH", shares: 72n, limit: 687n }, quote());
-    expect(e).toMatchObject({ filled: true, shares: 72n, price: 674n, partial: false });
-    if (e.filled) expect(e.charges.net).toBe(49_742n);
+  it("prices the buy with every charge and says Sika doesn't place orders", () => {
+    const card = suggestionCard({ side: "BUY", symbol: "MTNGH", shares: 72n, price: 674n }, verdict, quote());
+    expect(card).toContain("*Suggestion: buy 72 MTNGH* at about GHS 6.74");
+    expect(card).toContain("Total to pay: GHS 497.42");
+    expect(card).toContain("Fits your plan (3 checks)");
+    expect(card).toContain("Sika doesn't place orders");
+    expect(card).not.toMatch(/approve/i);
   });
 
-  it("sells at the best bid", async () => {
-    const e = await broker.execute({ side: "SELL", symbol: "MTNGH", shares: 10n, limit: 660n }, quote());
-    expect(e).toMatchObject({ filled: true, price: 670n });
-  });
-
-  it("never fills more than is offered at that price", async () => {
-    const e = await broker.execute({ side: "BUY", symbol: "MTNGH", shares: 500n, limit: 700n }, quote({ askVolume: 120 }));
-    expect(e).toMatchObject({ filled: true, shares: 120n, partial: true });
-  });
-
-  it("can't trade with nobody on the other side", async () => {
-    expect((await broker.execute({ side: "SELL", symbol: "MTNGH", shares: 1n, limit: 1n }, quote({ bid: null }))).filled).toBe(false);
-    expect((await broker.execute({ side: "BUY", symbol: "MTNGH", shares: 1n, limit: 9_999n }, quote({ ask: null }))).filled).toBe(false);
-  });
-
-  it("respects the limit price on both sides", async () => {
-    expect((await broker.execute({ side: "BUY", symbol: "MTNGH", shares: 1n, limit: 600n }, quote())).filled).toBe(false);
-    expect((await broker.execute({ side: "SELL", symbol: "MTNGH", shares: 1n, limit: 700n }, quote())).filled).toBe(false);
-  });
-
-  it("doesn't trade a halted stock", async () => {
-    expect((await broker.execute({ side: "BUY", symbol: "MTNGH", shares: 1n, limit: 700n }, quote({ tradable: false }))).filled).toBe(false);
-  });
-});
-
-describe("intent signatures", () => {
-  const fields = { id: "a", waId: "233", side: "BUY", symbol: "MTNGH", shares: 72n, price: 674n, net: 49_742n, expiresAt: "2026-10-29T12:00:00.000Z" };
-
-  it("verifies what was signed and nothing else", async () => {
-    const sig = await sign(fields, "secret");
-    expect(await verify(fields, sig, "secret")).toBe(true);
-    expect(await verify({ ...fields, shares: 720n }, sig, "secret")).toBe(false);
-    expect(await verify(fields, sig, "other")).toBe(false);
-    expect(await verify(fields, "nope", "secret")).toBe(false);
+  it("offers I bought it / I sold it, Why? and Not now, within WhatsApp's 20-character titles", () => {
+    expect(suggestionButtons({ id: "x", side: "BUY" }).map((b) => b.title)).toEqual(["I bought it", "Why?", "Not now"]);
+    expect(suggestionButtons({ id: "x", side: "SELL" }).map((b) => [b.id, b.title])[0]).toEqual(["sug:done:x", "I sold it"]);
   });
 });
 

@@ -1,16 +1,16 @@
 # Sika user guide
 
-Sika is an investing assistant for the Ghana Stock Exchange (GSE) that you talk to on WhatsApp. You tell it your goals, and together you set up a **plan**: a short set of limits you approve. Sika then helps you invest within that plan.
+Sika is an investing assistant for the Ghana Stock Exchange (GSE) that you talk to on WhatsApp. You tell it your goals, and together you set up a **plan**: a short set of limits you confirm. Sika then helps you invest within that plan.
 
-Sika suggests trades with the exact charges, explains why, and **only acts when you tap Approve**. It can never break your plan, even if you ask it to.
+Sika suggests trades with the exact charges and explains why. **It never buys or sells for you**: you decide, and you place orders with your own broker. A suggestion never breaks your plan, even if you ask it to.
 
-> **Prototype notice.** Sika is a hackathon prototype. Trades are **simulated** on real GSE prices; no real money moves and no real orders are placed. Sika gives information within your own plan; it is not personal investment advice.
+> **Prototype notice.** Sika is a hackathon prototype. It uses real GSE prices but never places orders or touches your money. Sika gives information within your own plan; it is not personal investment advice.
 
 ---
 
 ## 1. Getting started
 
-Send Sika's WhatsApp number any message, for example **"Hi"**. Sika welcomes you and shows two buttons: **Let's start** and **How it works**.
+Send Sika's WhatsApp number any message, in your own language. Say **"Hi"** (or **"Maakye"**, **"Woezɔ"**, **"How far"**…) and Sika welcomes you in the same language, with two buttons: **Let's start** and **How it works**. Or just ask something, like **"GCB boɔ yɛ sɛn?"**: Sika answers first, then offers to set up a plan.
 
 Setup has three short steps, and Sika always shows where you are (*Step 1 of 3 · About you*):
 
@@ -68,12 +68,12 @@ If you choose more risk than your profile suggests, the plan card shows a note, 
 |---|---|
 | Goal and time frame | What you're investing for. The time frame comes from your profile |
 | Risk level | Cautious, balanced or adventurous. Changing it resets the limits to that level's defaults |
-| Monthly amount | How much you plan to invest each month. Sika won't propose buys past it in a calendar month |
+| Monthly amount | How much you plan to invest each month. Sika won't suggest buys past it in a calendar month (it counts what you record with *I bought it*) |
 | Max per order | The most a single order can cost, charges included |
 | Max in one stock | The largest share of your portfolio any one stock may be |
-| Take profit / stop loss | Levels, measured **after charges**, at which Sika sends you a ready proposal |
-| Never sell at a loss | If on, Sika never proposes a sale below what you paid after charges, and the stop loss is off |
-| Stocks I like or avoid | Stocks to focus on, and stocks Sika must never propose buying |
+| Take profit / stop loss | Levels, measured **after charges**, at which Sika tells you, with what selling would bring in after charges |
+| Never sell at a loss | If on, Sika never suggests a sale below what you paid after charges, and the stop loss is off |
+| Stocks I like or avoid | Stocks to focus on, and stocks Sika must never suggest buying |
 
 **Only you can change it**, from **Menu → My plan → Change something**, or by asking in your own words ("set my take profit to 30%"), followed by a card to confirm. Sika can't loosen your plan for you, even if you ask it to "forget the limits".
 
@@ -117,7 +117,7 @@ Every price, charge and amount comes from GSE market data and Sika's fee calcula
 
 **Where prices come from.** Sika uses **IC Securities' market data** (marketdata.ic.africa). It reads two things:
 - a snapshot of every GSE stock, which can lag a little
-- the **live order book** for any stock where money would move or that you hold: proposals, approvals, simulated fills, your portfolio and alerts
+- the **live order book** for any stock you ask about, are suggested or hold: suggestions, your portfolio and alerts
 
 **Three prices, not one.** On the GSE, many stocks trade thinly, so there's often a gap between buyers and sellers. Sika shows all three:
 
@@ -130,43 +130,44 @@ Every price, charge and amount comes from GSE market data and Sika's fee calcula
 For example: "MTNGH: buyers at GHS 6.45, sellers at GHS 6.50, last trade GHS 6.60". On a thin stock like GCB, the gap can be over 15%.
 
 This is why:
-- **buys** are proposed and simulated at the **ask**, and **sells** at the **bid**
+- **buys** are suggested at the **ask**, and **sells** at the **bid**
 - your **portfolio** is valued at the **bid**, what you'd really get today. When nobody is bidding, Sika uses the last trade and says so
 - alerts trigger on the bid, so a take-profit alert means you could actually sell at that price
-- if nobody is selling (or buying) a stock, Sika tells you instead of proposing a trade that can't happen
-- an order never fills for more shares than are on offer at that price
+- if nobody is selling (or buying) a stock, Sika tells you instead of suggesting a trade that can't happen
+- if fewer shares are on offer than a suggestion needs, Sika warns you that the order may only fill partly
 
-## 5. Investing: proposals and approval
+## 5. Investing: suggestions, and you decide
 
 Say something like **"Invest this month's 500"** or **"Sell half my MTN"**. Sika will:
 
 1. Pick a trade that fits your goal and plan.
-2. Check it against **every limit in your plan**. If a rule blocks it, Sika tells you which one and suggests what would fit.
-3. Send a **proposal card**:
+2. Check it against **every limit in your plan**. If it breaks one, Sika tells you which and suggests what would fit.
+3. Send a **suggestion card**:
 
 ```
-Proposed: Buy 72 MTNGH @ GHS 6.74
+Suggestion: buy 72 MTNGH at about GHS 6.74
+Expected with IC Securities' charges:
 Gross: GHS 485.28
   CSD levy: GHS 0.73 · SEC levy: GHS 0.73 · GSE levy: GHS 1.70
   Market development levy: GHS 0.24 · Brokerage: GHS 8.74
 Charges: GHS 12.14 (2.50% tier)
 Total to pay: GHS 497.42
 Break-even sell price: GHS 7.07
-✅ Passed 8 plan checks
+✅ Fits your plan (8 checks)
 ```
 
-Then tap one of the buttons:
-- **Approve:** the trade is executed (simulated) and you get a receipt like a broker's contract note.
-- **Why?:** Sika's reasons, the main risk, any news it used, and the list of plan checks that passed.
-- **Reject:** nothing happens.
+**Sika doesn't place orders.** If you want the trade, place it with your broker (for example IC Securities). Prices move, so check the live price when you order.
 
-**Safety built in:**
-- A proposal is valid for **30 minutes**.
-- If the price moves more than **2%** before you approve, Sika cancels it and asks you to request a fresh one.
-- Your plan is checked again at the moment you approve.
-- Tapping Approve twice never trades twice.
-- Each proposal is locked (signed) exactly as you saw it, so nothing can change between your tap and the trade.
-- On the GSE, some stocks trade only a few shares a day. Sika never fills more shares than actually traded that day, and tells you if an order filled only partly.
+Then tap one of the buttons:
+- **I bought it** (or **I sold it**): Sika adds it to your holdings at the suggested price, with the charges. If your broker's contract note shows a different price or number of shares, tap **Fix it** and tell Sika what it says.
+- **Why?:** Sika's reasons, the main risk, any news it used, and the list of plan checks that passed.
+- **Not now:** nothing changes.
+
+**Good to know:**
+- Each suggestion is recorded **once**, however many times you tap.
+- A newer suggestion for the same stock replaces the older one.
+- What you record counts towards your **monthly amount**, so Sika won't suggest more than your plan allows that month.
+- On the GSE, some stocks trade only a few shares a day. Sika warns you when fewer shares are on offer than the suggestion needs.
 
 ## 6. Understanding the numbers
 
@@ -186,10 +187,10 @@ Then tap one of the buttons:
 ## 7. Alerts and reminders
 
 **Take-profit and stop-loss alerts.** While the GSE is open (weekdays 10:00–15:00), Sika checks your holdings every 30 minutes against your plan's levels, measured **after all charges**.
-- When a holding reaches your **take-profit** level, Sika sends a ready proposal to sell **half** of it, locking in part of the gain and keeping the rest invested.
-- When a holding falls below your **stop-loss** level, Sika proposes selling **all** of it. Stop loss is off if your plan says "never sell at a loss".
-- Either way, nothing is sold unless you tap **Approve**. The proposal still goes through every plan check.
-- Each alert fires **once per level**. If you reject it, Sika won't nag you again until your holding or plan changes.
+- When a holding reaches your **take-profit** level, Sika tells you and suggests selling **half** of it, which locks in part of the gain and keeps the rest invested. The message shows what that sale would bring in after charges.
+- When a holding falls below your **stop-loss** level, Sika tells you and suggests selling **all** of it. Stop loss is off if your plan says "never sell at a loss".
+- Either way, Sika doesn't sell anything: you decide, and use your broker. If you do sell, tap **I sold it** so your holdings stay right. The suggestion still goes through every plan check.
+- Each alert fires **once per level**. If you tap **Not now**, Sika won't nag you again until your holding or plan changes.
 - Send **/alerts** to see the exact prices that would trigger each alert.
 
 **News alerts.** Sika checks the news on the stocks you **hold or follow** twice each weekday (08:00 and 13:00). When there's an important story (results, dividends, deals, regulation, management changes, big price moves), it sends a short summary with a link to the source.
@@ -198,7 +199,7 @@ Then tap one of the buttons:
 
 **Monthly reminder.** In the first week of each month, if you have a monthly amount and haven't invested yet, Sika asks: **Invest now** or **Not this month**.
 
-**One WhatsApp rule:** businesses can only message you within **24 hours of your last message**. If you've been quiet for longer, Sika sends a short notice instead ("There's a new update on MTNGH…") with a **Show me** button. Tapping it shows the news, or, for a price alert, checks the live price again and gives you a fresh proposal if your level is still reached.
+**One WhatsApp rule:** businesses can only message you within **24 hours of your last message**. If you've been quiet for longer, Sika sends a short notice instead ("There's a new update on MTNGH…") with a **Show me** button. Tapping it shows the news, or, for a price alert, checks the live price again and tells you whether your level is still reached.
 
 ## 8. The menu and shortcuts
 
@@ -206,14 +207,14 @@ Send **menu** at any time, or tap the **Menu** button under Sika's messages. Dur
 
 | Menu item | What it does |
 |---|---|
-| Invest this month | A trade proposal for your monthly amount |
+| Invest this month | A suggestion for your monthly amount |
 | My portfolio | Your holdings, profit after charges and break-even prices |
 | Check a price | Live GSE prices and the exact charges to trade |
 | News & stocks I follow | Recent news on the stocks you hold, follow or like, with links to sources |
 | Update holdings | Add or correct a holding, with the form or a message |
 | My plan | Your plan, with **Change something** to edit any setting |
 | My alerts | The prices that trigger your take-profit and stop-loss alerts |
-| My investor profile | Your profile, with **Retake questions** |
+| Settings | Your language, voice replies, and your investor profile (with **Retake questions**) |
 | How Sika works | A quick guide |
 | Start over | Deletes your profile, plan, holdings and history. **Sika asks you to confirm first** |
 
@@ -221,7 +222,7 @@ Send **menu** at any time, or tap the **Menu** button under Sika's messages. Dur
 
 ## 9. Privacy
 
-- Sika stores only what it needs: your WhatsApp number and name, your profile, plan, holdings, chat with Sika, proposals and simulated trades.
+- Sika stores only what it needs: your WhatsApp number and name, your profile, plan, holdings, chat with Sika, and the suggestions it made and what you recorded.
 - Voice notes are turned into text and the audio isn't kept; Sika keeps only the transcript.
 - Sika never asks for your broker login, bank details or Mobile Money PIN, and it cannot move real money.
 - Messages are processed by Meta's AI models: Muse Spark understands them, and Muse Voice Transcribe turns voice notes into text.
@@ -229,19 +230,22 @@ Send **menu** at any time, or tap the **Menu** button under Sika's messages. Dur
 
 ## 10. Extras
 
-- **Your activity page.** With every trade receipt and portfolio view, Sika sends a private link to a page showing each decision step by step: why Sika suggested the trade, the order book it was priced from, every plan check (or what blocked it), your decision, and the fill. Anyone you share the link with can see it.
-- **A first-step postcard.** After your very first investment, Sika sends a picture of your goal (a house, a graduation, your shop…) with your first trade written on it.
-- **Your language.** Write to Sika in Twi, Ga, Ewe, Hausa or Pidgin and it answers in the same language. Setup buttons and amounts stay in English.
+- **Your activity page.** When you record a purchase or view your portfolio, Sika sends a private link to a page showing each suggestion step by step: why Sika suggested it, the order book it was priced from, every plan check (or what it broke), and what you did. Anyone you share the link with can see it.
+- **A first-step postcard.** When you record your very first purchase, Sika sends a picture of your goal (a house, a graduation, your shop…) with that purchase written on it.
+- **Your language.** Just write or speak to Sika in English, Pidgin, Twi, Fante, Ga, Ewe, Hausa or Dagbani, and it answers in the same language, buttons included where they fit. Switch whenever you like: a clear message in another language switches Sika too, while short replies like "ok" don't.
+  - **Numbers stay exact.** Lines that are just figures (charges, totals) stay as they are. If translating a sentence would change an amount, a ticker or a link, Sika sends that line in English.
+  - **Choosing it yourself:** send **/language** or open **Settings** from the menu.
+- **Voice replies.** Send Sika a voice note and it answers with one, a short spoken summary, plus the full text so you can check the numbers. In **Settings → Voice replies** you can choose **When I send one** (the default), **Always** or **Text only**.
 - **Try it on the web.** The same Sika runs in a browser on Sika's website, for people without WhatsApp access to the test number.
 
 ## 11. FAQ
 
-**Is this real trading?** No. It's a prototype on real GSE prices with simulated execution.
+**Does Sika trade for me?** No. Sika suggests and explains; you place orders with your own broker. Sika never holds money or sends orders anywhere.
 
-**Can Sika trade without me?** No. Every trade needs your Approve tap, and your plan is checked before and at the moment of approval.
+**Why record purchases with "I bought it"?** So your portfolio, profit after charges, monthly budget and alerts reflect what you actually own. If your broker's price was different, tap **Fix it**.
 
 **Why did Sika refuse my request?** It would break one of your plan's limits. Sika tells you which rule. You can change your plan if you really want to.
 
 **Why does Sika say a price may be out of date?** The GSE data feed marks some prices as stale, for example when a stock hasn't traded recently. Treat those with care.
 
-**Why did my order only partly fill?** Fewer shares traded that day than you asked for. Many GSE stocks trade thinly.
+**Why did Sika warn that an order may only fill partly?** Fewer shares were on offer at that price than the suggestion needs. Many GSE stocks trade thinly.

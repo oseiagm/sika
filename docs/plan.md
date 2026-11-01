@@ -1,5 +1,7 @@
 # Sika — an investing agent for the Ghana Stock Exchange that lives in WhatsApp
 
+> **Historical.** This is the original build plan. Since 1 Nov 2026 Sika no longer simulates trades or asks for Approve: it suggests trades that fit the plan, and the investor places them with their own broker. See the README for the current design.
+
 ## Context
 The user is in the Meta Global AI Developer Hackathon (Indie Developer track). It runs Oct 26 – **Nov 4, 9:00 PM ET** (about 6 days left), judging Nov 4–8, and finals Nov 9.
 - **Stage 1 (pass/fail):** the project must fit a theme and really use the Meta Model API and/or Meta open-weight models.

@@ -7,6 +7,8 @@ import type { ProfileState } from "./profile/conversation";
 import type { Tape } from "./market/quotes";
 import type { Holding, HoldingInput } from "./portfolio/holdings";
 import type { NewsItem } from "./news/search";
+import { isLang, isVoiceReplies, type Lang, type VoiceReplies } from "./i18n/languages";
+import type { TranslationCache } from "./i18n/translate";
 
 export interface PendingUpdate {
   id: string;
@@ -70,6 +72,9 @@ export interface User {
   /** Risk-profile questions: in progress, finished (done set), or never started (null). */
   profile: ProfileState | null;
   flow: FlowState | null;
+  /** Null until chosen; Sika then uses English. */
+  lang: Lang | null;
+  voiceReplies: VoiceReplies;
 }
 
 interface UserRow {
@@ -80,6 +85,8 @@ interface UserRow {
   holdings_draft_json: string | null;
   profile_json: string | null;
   flow_json: string | null;
+  lang: string | null;
+  voice_replies: string | null;
 }
 
 export class Db {
@@ -107,6 +114,8 @@ export class Db {
       holdingsDraft: row.holdings_draft_json ? JSON.parse(row.holdings_draft_json) : null,
       profile: row.profile_json ? JSON.parse(row.profile_json) : null,
       flow: row.flow_json ? JSON.parse(row.flow_json) : null,
+      lang: row.lang && isLang(row.lang) ? row.lang : null,
+      voiceReplies: row.voice_replies && isVoiceReplies(row.voice_replies) ? row.voice_replies : "match",
     };
   }
 
@@ -217,7 +226,7 @@ export class Db {
     return r.meta.changes === 1;
   }
 
-  /** A new proposal for a stock supersedes any still waiting for that stock; other stocks' proposals stay open. */
+  /** A new suggestion for a stock replaces any still open for it; other stocks' suggestions stay open. */
   async expireOpenIntents(waId: string, symbol: string): Promise<void> {
     await this.d1
       .prepare("UPDATE intents SET status = 'EXPIRED', decided_at = datetime('now') WHERE wa_id = ? AND symbol = ? AND status = 'PROPOSED'")
@@ -279,6 +288,33 @@ export class Db {
       .bind(waId)
       .first<{ ok: number }>();
     return r !== null;
+  }
+
+  // ── Language and voice ──
+
+  async setLang(waId: string, lang: Lang): Promise<void> {
+    await this.d1.prepare("UPDATE users SET lang = ? WHERE wa_id = ?").bind(lang, waId).run();
+  }
+
+  async setVoiceReplies(waId: string, v: VoiceReplies): Promise<void> {
+    await this.d1.prepare("UPDATE users SET voice_replies = ? WHERE wa_id = ?").bind(v, waId).run();
+  }
+
+  /** The language settings for a number, without creating a user (the scheduled jobs send to known users only). */
+  async langOf(waId: string): Promise<{ lang: Lang; voiceReplies: VoiceReplies }> {
+    const r = await this.d1.prepare("SELECT lang, voice_replies FROM users WHERE wa_id = ?").bind(waId).first<{ lang: string | null; voice_replies: string | null }>();
+    return {
+      lang: r?.lang && isLang(r.lang) ? r.lang : "en",
+      voiceReplies: r?.voice_replies && isVoiceReplies(r.voice_replies) ? r.voice_replies : "match",
+    };
+  }
+
+  /** Translated lines, shared by everyone (they're Sika's own messages, not personal data). */
+  translations(): TranslationCache {
+    return {
+      get: async (key) => (await this.d1.prepare("SELECT text FROM translations WHERE key = ?").bind(key).first<{ text: string }>())?.text ?? null,
+      put: async (key, text) => void (await this.d1.prepare("INSERT OR REPLACE INTO translations (key, text) VALUES (?, ?)").bind(key, text).run()),
+    };
   }
 
   // ── News: follows, articles seen, updates waiting behind a template tap ──

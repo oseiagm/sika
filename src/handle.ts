@@ -1,9 +1,14 @@
 import { metaClient } from "./agent/meta";
 import { runAgent } from "./agent/loop";
 import { checkScope, replyFor } from "./agent/scope";
+import { clearlyEnglish, detectLanguage, isGreeting, tooShortToTell } from "./i18n/detect";
+import { khayaTranscribe } from "./i18n/khaya";
+import { isLang, isVoiceReplies, languageOf, LANGUAGES, type Lang } from "./i18n/languages";
+import { localize, type LocalizedSender } from "./i18n/sender";
+import { toEnglish } from "./i18n/translate";
+import { toVoiceNote } from "./voice/encode";
 import { alertsCard, triggered } from "./alerts/levels";
 import { alertMessages } from "./alerts/monitor";
-import { PaperBroker } from "./broker/paper";
 import { firstStepCard } from "./cards/milestone";
 import { Db, type User } from "./db";
 import { ghs } from "./fees/engine";
@@ -27,7 +32,7 @@ import { followCommand } from "./flow/follow";
 import { extractStocks } from "./flow/stocks";
 import { STEP, type Ui } from "./flow/ui";
 import type { Env } from "./index";
-import { approve, reject, whyCard, type Deps } from "./intents/service";
+import { dismiss, recordDone, whyCard, type Deps } from "./intents/service";
 import { fingerprint } from "./intents/sign";
 import { mandateCard } from "./mandate/schema";
 import { fetchQuotes, refreshLive, withLiveBook, type Quote } from "./market/quotes";
@@ -38,7 +43,7 @@ import { answer, ask, classify, nextQuestion, type ProfileState } from "./profil
 import { profileCard, QUESTIONS } from "./profile/questions";
 import { oggOpusToWav } from "./voice/opus";
 import { transcribe } from "./voice/transcribe";
-import { downloadMedia, markReadTyping, sendButtons, sendFlow, sendImage, sendList, sendTemplate, sendText, type ListRow, type WhatsAppConfig } from "./whatsapp/client";
+import { downloadMedia, markReadTyping, sendButtons, sendFlow, sendImage, sendList, sendTemplate, sendText, sendVoice, type ListRow, type WhatsAppConfig } from "./whatsapp/client";
 import type { Inbound } from "./whatsapp/webhook";
 
 /** Where replies go: WhatsApp in production, a list in tests and the dev chat route. */
@@ -52,6 +57,8 @@ export interface Sender {
   flow(to: string, body: string, data: Record<string, unknown>): Promise<void>;
   /** An approved template (outside the 24-hour window); payload comes back as the tapped button id. */
   template(to: string, name: string, bodyParams: string[], quickReplyPayload: string): Promise<void>;
+  /** A voice note from a WAV (WhatsApp gets Ogg Opus; the web page plays the WAV). */
+  voice(to: string, wav: Uint8Array): Promise<void>;
   typing(messageId: string): Promise<void>;
 }
 
@@ -71,8 +78,14 @@ export function whatsappSender(env: Env): Sender {
         ? sendFlow(wa, to, { id: env.WA_HOLDING_FLOW_ID, published: false }, body, "Open form", "HOLDING", data)
         : sendText(wa, to, body),
     template: (to, name, params, payload) => sendTemplate(wa, to, { name, language: env.WA_TEMPLATE_LANG ?? "en" }, params, payload),
+    voice: (to, wav) => sendVoice(wa, to, toVoiceNote(wav)),
     typing: (id) => markReadTyping(wa, id).catch(() => {}),
   };
+}
+
+/** A sender that speaks each investor's language (see src/i18n/sender.ts). Used for chats and the scheduled jobs. */
+export function localizedSender(env: Env, base: Sender, db: Db = new Db(env.DB)): LocalizedSender {
+  return localize(base, { db, meta: metaClient(env.MODEL_API_KEY), model: env.META_MODEL, khayaKey: env.KHAYA_API_KEY }, (to) => db.langOf(to));
 }
 
 const HOW_IT_WORKS = [
@@ -82,7 +95,7 @@ const HOW_IT_WORKS = [
   "2. *Your plan*: your goal, monthly amount and limits. I suggest; you decide.",
   "3. *What you own*: tell me your shares, or start fresh.",
   "",
-  "Then ask me anything: prices, exact charges, comparing stocks, news with sources, your portfolio. Say *follow GCB* and I'll message you when there's important news on it. When you want to invest, I propose a trade with every charge shown. *Nothing is bought or sold unless you tap Approve*, and your plan's limits are checked every time.",
+  "Then ask me anything: prices, exact charges, comparing stocks, news with sources, your portfolio. Say *follow GCB* and I'll message you when there's important news on it. When you want to invest, I suggest a trade that fits your plan, with every charge shown. *Sika never buys or sells for you*: you place the order with your broker, then tap *I bought it* and I keep your holdings up to date.",
   "",
   "Tap a button or just type or send a voice note. Send *menu* any time to see everything.",
 
@@ -92,7 +105,7 @@ const WELCOME = (name: string | null) =>
   [
     `Hi${name ? ` ${name.split(" ")[0]}` : ""} 👋 I'm *Sika*, your investing assistant for the Ghana Stock Exchange.`,
     "",
-    "I'll help you set up a plan, then suggest trades with the exact charges. *Nothing is ever bought or sold unless you tap Approve.*",
+    "I'll help you set up a plan, then suggest trades that fit it, with the exact charges. *I never buy or sell for you*: you decide, and you place orders with your own broker.",
     "",
     "Setup takes about 3 minutes:",
     "1️⃣ About you  2️⃣ Your plan  3️⃣ What you own",
@@ -101,7 +114,7 @@ const WELCOME = (name: string | null) =>
 
 /** Menu choices that are questions for the agent. */
 const AGENT_PROMPTS: Partial<Record<MenuAction, string>> = {
-  invest: "I'd like to invest this month's amount. Please propose a trade that fits my plan.",
+  invest: "I'd like to invest this month's amount. Please suggest a trade that fits my plan.",
   news: "Any recent news on the stocks I hold, follow or like? Also remind me which stocks I'm following for news.",
 };
 
@@ -113,8 +126,8 @@ async function activityLink(t: Turn): Promise<string> {
 See every step behind it: ${t.env.PUBLIC_BASE_URL}/activity/${await t.db.viewToken(t.to)}`;
 }
 
-/** After an investor's very first trade: a Muse Image postcard of their goal, with the trade on it. */
-async function celebrateFirstTrade(t: Turn): Promise<void> {
+/** After an investor records their very first purchase: a Muse Image postcard of their goal, with the purchase on it. */
+async function celebrateFirstBuy(t: Turn): Promise<void> {
   const fills = await t.db.fillsFor(t.to);
   if (fills.length !== 1 || !t.user.mandate) return;
   const intent = await t.db.intent(t.to, fills[0]!.intentId);
@@ -135,7 +148,7 @@ async function celebrateFirstTrade(t: Turn): Promise<void> {
 interface Turn {
   db: Db;
   env: Env;
-  send: Sender;
+  send: LocalizedSender;
   to: string;
   user: User;
   flow: FlowState;
@@ -147,13 +160,63 @@ interface Turn {
 /** WhatsApp caps interactive message bodies; longer text goes first on its own. */
 const BODY_LIMIT = 1000;
 
-async function deliver(t: Turn, ui: Ui): Promise<void> {
+/** Sends Sika's message (in English; the sender translates it). `raw` sends it exactly as written. */
+async function deliver(t: Turn, ui: Ui, raw = false): Promise<void> {
   await t.db.addMessage(t.to, "assistant", ui.text);
+  const send = raw ? t.send.raw : t.send;
   const controls = ui.buttons || ui.list;
-  const body = controls && ui.text.length > BODY_LIMIT ? (await t.send.text(t.to, ui.text), "What would you like to do next?") : ui.text;
-  if (ui.buttons) await t.send.buttons(t.to, body, ui.buttons);
-  else if (ui.list) await t.send.list(t.to, body, ui.list.button, ui.list.rows);
-  else await t.send.text(t.to, body);
+  const body = controls && ui.text.length > BODY_LIMIT ? (await send.text(t.to, ui.text), "What would you like to do next?") : ui.text;
+  if (ui.buttons) await send.buttons(t.to, body, ui.buttons);
+  else if (ui.list) await send.list(t.to, body, ui.list.button, ui.list.rows);
+  else await send.text(t.to, body);
+}
+
+// ── Language and voice settings ───────────────────────────────────────────
+
+/** The language picker: each language in its own name. Sent as written, since it's for every language. */
+function languageUi(): Ui {
+  return {
+    text: "🌍 Which language should I use? You can type or send voice notes in it, and change it any time in *Settings*.",
+    list: { button: "Languages", rows: LANGUAGES.map((l) => ({ id: `lang:${l.code}`, title: l.endonym, ...(l.english !== l.endonym ? { description: l.english } : {}) })) },
+  };
+}
+
+const VOICE_LABEL = { match: "When I send one", always: "Always", off: "Text only" } as const;
+
+function settingsUi(t: Turn): Ui {
+  return {
+    text: [
+      "*Settings*",
+      `• Language: ${languageOf(t.user.lang).endonym}`,
+      `• Voice replies: ${VOICE_LABEL[t.user.voiceReplies]}`,
+    ].join("\n"),
+    buttons: [
+      { id: "set:language", title: "Language" },
+      { id: "set:voice", title: "Voice replies" },
+      { id: "menu:profile", title: "Investor profile" },
+    ],
+  };
+}
+
+function voiceUi(t: Turn): Ui {
+  return {
+    text: `When should I reply with a voice note? Now: *${VOICE_LABEL[t.user.voiceReplies]}*.\n\nI always send the text too, so you can check the numbers.`,
+    buttons: [
+      { id: "voice:match", title: "When I send one" },
+      { id: "voice:always", title: "Always" },
+      { id: "voice:off", title: "Text only" },
+    ],
+  };
+}
+
+async function chooseLanguage(t: Turn, lang: Lang): Promise<void> {
+  await t.db.setLang(t.to, lang);
+  await t.db.audit(t.to, "language", { lang });
+  t.user.lang = lang;
+  t.send.forget(t.to);
+  await t.db.addMessage(t.to, "user", `(chose) ${languageOf(lang).english}`);
+  if (t.flow.stage === "welcome") return deliver(t, welcomeUi(t));
+  return deliver(t, withMenu(t, `✅ I'll use ${languageOf(lang).endonym} from now on.`));
 }
 
 /** Text with the Menu list button underneath, so there's always somewhere to go next. */
@@ -168,6 +231,17 @@ async function saveFlow(t: Turn): Promise<void> {
 }
 
 // ── Where the user is: show the current step ──────────────────────────────
+
+/** After answering a newcomer's first question: a short invitation instead of the whole welcome. */
+function inviteUi(): Ui {
+  return {
+    text: "Want help investing on the GSE? I can set up a plan with you and suggest trades that fit it, with every charge shown. It takes about 3 minutes.",
+    buttons: [
+      { id: "flow:start", title: "Let's start" },
+      { id: "flow:how", title: "How it works" },
+    ],
+  };
+}
 
 function welcomeUi(t: Turn): Ui {
   return {
@@ -540,7 +614,7 @@ async function answerThenResume(t: Turn, text: string, step: string, resume: Ui)
   if (await outOfScope(t, text)) return deliver(t, resume);
   const history = (await t.db.history(t.to)).filter((m) => m.content !== MENU_MARKER);
   const result = await runAgent(
-    { db: t.db, user: t.user, quotes: t.quotes, meta: metaClient(t.env.MODEL_API_KEY), model: t.env.META_MODEL, intentKey: t.env.INTENT_KEY },
+    { db: t.db, user: t.user, quotes: t.quotes, meta: metaClient(t.env.MODEL_API_KEY), model: t.env.META_MODEL },
     history,
     0,
     step,
@@ -563,18 +637,13 @@ async function outOfScope(t: Turn, text: string): Promise<boolean> {
   return true;
 }
 
-/** "Hi", "hello", "let's start": a greeting, not a question to answer. */
-const isGreeting = (text: string) =>
-  text.trim().split(/\s+/).length <= 5 &&
-  /^(hi|hello|hey|hiya|yo|good (morning|afternoon|evening)|start|get started|let'?s (go|start|begin)|ok|okay|yes|sure|akwaaba|ete sen)\b/i.test(text.trim());
-
 async function converse(t: Turn, text: string): Promise<void> {
   await t.db.addMessage(t.to, "user", text);
   if (await outOfScope(t, text)) return;
   const history = (await t.db.history(t.to)).filter((m) => m.content !== MENU_MARKER);
   const holdingCount = (await t.db.holdings(t.to)).length;
   const result = await runAgent(
-    { db: t.db, user: t.user, quotes: t.quotes, meta: metaClient(t.env.MODEL_API_KEY), model: t.env.META_MODEL, intentKey: t.env.INTENT_KEY },
+    { db: t.db, user: t.user, quotes: t.quotes, meta: metaClient(t.env.MODEL_API_KEY), model: t.env.META_MODEL },
     history,
     holdingCount,
   );
@@ -594,6 +663,8 @@ async function runMenuAction(t: Turn, action: MenuAction | "menu"): Promise<void
     return t.db.addMessage(t.to, "assistant", MENU_MARKER);
   }
   if (action === "continue") return deliver(t, await currentUi(t));
+  if (action === "language") return deliver(t, languageUi(), true);
+  if (action === "settings") return deliver(t, settingsUi(t));
   if (action === "help") return deliver(t, t.flow.stage === "ready" ? withMenu(t, HOW_IT_WORKS) : { text: HOW_IT_WORKS, buttons: [{ id: "flow:continue", title: "Continue setup" }] });
   if (action === "reset") {
     return deliver(t, {
@@ -694,7 +765,7 @@ async function showPending(t: Turn, id: string): Promise<void> {
     const msg = update.payload as { text: string; buttons: { id: string; title: string }[] };
     return deliver(t, { text: msg.text, buttons: msg.buttons });
   }
-  // A price alert: the proposal would have expired by now, so check the live price again and propose afresh.
+  // A price alert from a while ago: check the live price again before saying anything.
   const h = (await t.db.holdings(t.to)).find((x) => x.symbol === update.symbol);
   const snapshot = t.quotes.get(update.symbol);
   if (!h || !snapshot || !t.user.mandate || !t.user.mandateConfirmed) return deliver(t, withMenu(t, `You no longer hold ${update.symbol}, so there's nothing to do.`));
@@ -711,7 +782,7 @@ async function showPending(t: Turn, id: string): Promise<void> {
       ],
     });
   }
-  const messages = await alertMessages(t.db, t.user, t.quotes, t.env.INTENT_KEY, h, trigger);
+  const messages = await alertMessages(t.db, t.user, t.quotes, h, trigger);
   for (const m of messages) await deliver(t, m.buttons ? { text: m.text, buttons: m.buttons } : messages.length === 1 ? withMenu(t, m.text) : { text: m.text });
 }
 
@@ -721,19 +792,31 @@ async function handleButton(t: Turn, id: string): Promise<void> {
   const { db, to, user, quotes } = t;
   await db.audit(to, "button", { id });
 
-  const [, action, intentId] = /^intent:(approve|why|reject):([0-9a-f-]{36})$/.exec(id) ?? [];
+  // Suggestion buttons. Sika never trades: "I bought it" only records what the investor did with their broker.
+  const [, action, intentId] = /^sug:(done|why|skip):([0-9a-f-]{36})$/.exec(id) ?? [];
   if (action && intentId) {
     if (action === "why") {
       const intent = await db.intent(to, intentId);
-      return deliver(t, withMenu(t, intent ? whyCard(intent) : "I can't find that proposal."));
+      return deliver(t, withMenu(t, intent ? whyCard(intent) : "I can't find that suggestion."));
     }
-    const deps: Deps = { db, user, quotes, intentKey: t.env.INTENT_KEY };
-    const result = action === "approve" ? await approve(deps, new PaperBroker(), intentId) : await reject(deps, intentId);
-    await db.addMessage(to, "user", action === "approve" ? "Approve" : "Reject");
-    const filled = action === "approve" && result.message.startsWith("*✅");
-    const link = filled ? await activityLink(t) : "";
-    await deliver(t, withMenu(t, result.message + link));
-    if (filled) await celebrateFirstTrade(t);
+    const deps: Deps = { db, user, quotes };
+    if (action === "skip") {
+      await db.addMessage(to, "user", "Not now");
+      return deliver(t, withMenu(t, await dismiss(deps, intentId)));
+    }
+    const intent = await db.intent(to, intentId);
+    await db.addMessage(to, "user", intent?.side === "SELL" ? "I sold it" : "I bought it");
+    const result = await recordDone(deps, intentId);
+    if (!result.ok) return deliver(t, withMenu(t, result.message));
+    await deliver(t, {
+      text: result.message + (await activityLink(t)),
+      buttons: [
+        { id: "holdings:fix", title: "Fix it" },
+        { id: "menu:portfolio", title: "My portfolio" },
+        { id: "flow:menu", title: "Menu" },
+      ],
+    });
+    if (result.firstBuy) await celebrateFirstBuy(t);
     return;
   }
 
@@ -749,6 +832,19 @@ async function handleButton(t: Turn, id: string): Promise<void> {
   }
 
   if (id.startsWith("hf:")) return formInput(t, { buttonId: id });
+
+  const [, langCode] = /^lang:(\w+)$/.exec(id) ?? [];
+  if (langCode && isLang(langCode)) return chooseLanguage(t, langCode);
+  const [, voiceSetting] = /^voice:(\w+)$/.exec(id) ?? [];
+  if (voiceSetting && isVoiceReplies(voiceSetting)) {
+    await db.setVoiceReplies(to, voiceSetting);
+    t.user.voiceReplies = voiceSetting;
+    t.send.forget(to);
+    await db.audit(to, "voice_replies", { setting: voiceSetting });
+    return deliver(t, withMenu(t, `✅ Voice replies: ${VOICE_LABEL[voiceSetting]}.`));
+  }
+  if (id === "set:language") return deliver(t, languageUi(), true);
+  if (id === "set:voice") return deliver(t, voiceUi(t));
 
   const [, pendingId] = /^update:show:([0-9a-f-]{36})$/.exec(id) ?? [];
   if (pendingId) return showPending(t, pendingId);
@@ -885,20 +981,77 @@ async function showField(t: Turn, field: string): Promise<void> {
 // ── Voice ─────────────────────────────────────────────────────────────────
 
 /** Voice note → text, via Muse Voice Transcribe. Returns null (after telling the user) if it can't be heard. */
-async function hear(t: Turn, mediaId: string): Promise<string | null> {
-  const { bytes, mimeType } = await downloadMedia(whatsappConfig(t.env), mediaId);
-  if (!mimeType.startsWith("audio/ogg")) {
-    await deliver(t, { text: "I can only listen to WhatsApp voice notes. Could you record one, or type it?" });
-    return null;
+/**
+ * Voice note → text: Muse Voice Transcribe for English and Pidgin, Khaya for Ghanaian languages.
+ * WhatsApp sends Ogg Opus (decoded here); the web page sends a 16 kHz WAV it made in the browser.
+ * The transcript is echoed back as heard, in the investor's own words.
+ */
+async function hear(t: Turn, message: Inbound): Promise<string | null> {
+  let wav: Uint8Array;
+  if (message.wav) wav = message.wav;
+  else {
+    const { bytes, mimeType } = await downloadMedia(whatsappConfig(t.env), message.mediaId ?? "");
+    if (!mimeType.startsWith("audio/ogg")) {
+      await deliver(t, { text: "I can only listen to WhatsApp voice notes. Could you record one, or type it?" });
+      return null;
+    }
+    wav = await oggOpusToWav(bytes);
   }
-  const transcript = await transcribe(t.env.MODEL_API_KEY, await oggOpusToWav(bytes));
-  await t.db.audit(t.to, "voice", { bytes: bytes.length, transcript });
+  // Listen in the language they've been using. Someone new, or using English or Pidgin, is heard by Muse
+  // first; if that doesn't sound like English or Pidgin, Khaya tries Twi, Ghana's most spoken language.
+  const lang = languageOf(t.user.lang);
+  const key = t.env.KHAYA_API_KEY;
+  const muse = () => transcribe(t.env.MODEL_API_KEY, wav).catch(() => "");
+  const khaya = (code: string) => (key ? khayaTranscribe(key, wav, code).catch(() => "") : Promise.resolve(""));
+  let transcript: string;
+  let by: string;
+  if (lang.asr.by === "khaya") {
+    transcript = await khaya(lang.asr.code);
+    by = `khaya:${lang.asr.code}`;
+    if (!transcript) [transcript, by] = [await muse(), "muse"];
+  } else {
+    transcript = await muse();
+    by = "muse";
+    if (key && (!transcript || (!clearlyEnglish(transcript) && (await detectLanguage(metaClient(t.env.MODEL_API_KEY), t.env.META_MODEL, transcript)) !== lang.code))) {
+      const twi = await khaya("twi");
+      if (twi) [transcript, by] = [twi, "khaya:twi"];
+    }
+  }
+  await t.db.audit(t.to, "voice", { bytes: wav.length, lang: lang.code, by, transcript });
   if (!transcript) {
     await deliver(t, { text: "Sorry, I couldn't make that out. Could you try again, or type it?" });
     return null;
   }
-  await t.send.text(t.to, `🎙️ _"${transcript}"_`);
-  return transcript;
+  await t.send.raw.text(t.to, `🎙️ _"${transcript.slice(0, 500)}"_`);
+  return transcript.slice(0, 500);
+}
+
+/**
+ * Answer the way they asked: if this message is clearly in another language Sika speaks, switch to it.
+ * Short replies ("ok", "2", "follow GCB") never switch, so mixing in English doesn't flip the language.
+ */
+async function followLanguage(t: Turn, text: string): Promise<void> {
+  const current = t.user.lang ?? "en";
+  const first = !t.user.lang;
+  if (!first && (tooShortToTell(text) || text.trim().split(/\s+/).length < 3)) return;
+  if (followCommand(text, t.quotes)) return;
+  const detected = await detectLanguage(metaClient(t.env.MODEL_API_KEY), t.env.META_MODEL, text);
+  if (!detected || (detected === current && !first)) return;
+  // Without Khaya, Sika can still follow English and Pidgin and Hausa (Muse Spark translates those).
+  if (!t.env.KHAYA_API_KEY && languageOf(detected).translate.by === "khaya") return;
+  await t.db.setLang(t.to, detected);
+  if (detected !== current) await t.db.audit(t.to, "language_detected", { from: t.user.lang, to: detected, text: text.slice(0, 200) });
+  t.user.lang = detected;
+  t.send.forget(t.to);
+}
+
+/** What the investor wrote or said → English for Sika's flows (commands, numbers and tickers pass through). */
+async function inEnglish(t: Turn, text: string): Promise<string> {
+  const lang = t.user.lang;
+  if (!lang || lang === "en" || /^\/|^\d{1,2}$/.test(text.trim()) || followCommand(text, t.quotes)) return text;
+  const english = await toEnglish({ khayaKey: t.env.KHAYA_API_KEY, meta: metaClient(t.env.MODEL_API_KEY), model: t.env.META_MODEL, cache: t.db.translations() }, text, lang);
+  if (english !== text) await t.db.audit(t.to, "translated_in", { lang, original: text, english });
+  return english;
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────
@@ -912,7 +1065,14 @@ export async function handle(message: Inbound, env: Env, send: Sender = whatsapp
   const user = await db.user(to, message.name);
   const flow = inferFlow(user.flow, user.profile !== null, user.mandateConfirmed, (await db.holdings(to)).length);
   const quotes = new Map<string, Quote>((await fetchQuotes()).map((q) => [q.symbol, q]));
-  const t: Turn = { db, env, send, to, user, flow, quotes };
+  const t: Turn = { db, env, send: localizedSender(env, send, db), to, user, flow, quotes };
+  await route(t, message);
+  // Reply in the investor's mode: a voice note after the text when they spoke (or always, if they chose that).
+  await t.send.speak(to, message.kind === "audio");
+}
+
+async function route(t: Turn, message: Inbound): Promise<void> {
+  const { db, to, user, flow, quotes } = t;
 
   if (message.kind === "other") {
     await deliver(t, { text: "I can read text and listen to voice notes. Could you send it as one of those?" });
@@ -921,14 +1081,17 @@ export async function handle(message: Inbound, env: Env, send: Sender = whatsapp
   if (message.kind === "button") return handleButton(t, message.buttonId ?? "");
   if (message.kind === "form") return handleHoldingForm(t, message.form ?? {});
 
-  const text = message.kind === "audio" ? await hear(t, message.mediaId ?? "") : (message.text ?? "");
-  if (!text) return;
+  const heard = message.kind === "audio" ? await hear(t, message) : (message.text ?? "");
+  if (!heard) return;
+  await followLanguage(t, heard);
+  const text = await inEnglish(t, heard);
+  const greeting = isGreeting(heard) || isGreeting(text);
 
-  // First message ever: say hello and offer to start.
+  // First message ever: a greeting gets the welcome; a question gets answered first, then a short invitation.
   if (!user.flow && flow.stage === "welcome") {
     await saveFlow(t);
     await db.addMessage(to, "user", text);
-    return isGreeting(text) ? deliver(t, welcomeUi(t)) : answerThenResume(t, text, "welcome, before setup has started", welcomeUi(t));
+    return greeting ? deliver(t, welcomeUi(t)) : answerThenResume(t, text, "welcome, before setup has started", inviteUi());
   }
 
   const follow = followCommand(text, quotes);
@@ -943,7 +1106,7 @@ export async function handle(message: Inbound, env: Env, send: Sender = whatsapp
   switch (flow.stage) {
     case "welcome":
       await db.addMessage(to, "user", text);
-      return isGreeting(text) ? startProfile(t, false) : answerThenResume(t, text, "welcome, before setup has started", welcomeUi(t));
+      return greeting ? startProfile(t, false) : answerThenResume(t, text, "welcome, before setup has started", inviteUi());
     case "profile":
       await db.addMessage(to, "user", text);
       return profileText(t, text);

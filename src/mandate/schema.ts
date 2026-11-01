@@ -16,7 +16,7 @@ export const Mandate = z.object({
   excludedSymbols: z.array(symbol).max(20).describe("Stocks they never want to hold"),
   stopLossPercent: z.number().min(1).max(90).nullable().describe("Sell if a holding is down this % after fees; null for none"),
   takeProfitPercent: z.number().min(1).max(500).nullable().describe("Consider selling when up this % after fees; null for none"),
-  neverSellAtLoss: z.boolean().describe("Never propose a sale below break-even after fees (ignores stop loss)"),
+  neverSellAtLoss: z.boolean().describe("Never suggest a sale below break-even after fees (ignores stop loss)"),
 });
 export type Mandate = z.infer<typeof Mandate>;
 
@@ -42,7 +42,7 @@ export function mandateCard(m: Mandate, profileRisk?: Risk): string {
     `• Take profit: ${m.takeProfitPercent ? `${m.takeProfitPercent}% after fees` : "none"}`,
     ...(profileRisk && riskGap(profileRisk, m.risk) ? ["", riskGap(profileRisk, m.risk)!] : []),
     "",
-    "I only propose trades inside this plan, and nothing happens until you tap *Approve*.",
+    "I only suggest trades that fit this plan. I never buy or sell for you.",
   ];
   return lines.join("\n");
 }

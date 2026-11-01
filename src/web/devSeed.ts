@@ -6,7 +6,7 @@ export function devSeedPage(): string {
     {
       from: "them",
       at: t + 2e3,
-      text: "Hi 👋 I'm *Sika*, your investing assistant for the Ghana Stock Exchange.\n\nI'll help you set up a plan, then suggest trades with the exact charges. *Nothing is ever bought or sold unless you tap Approve.*",
+      text: "Hi 👋 I'm *Sika*, your investing assistant for the Ghana Stock Exchange.\n\nI'll help you set up a plan, then suggest trades with the exact charges. *I never buy or sell for you*: you decide, and you place orders with your own broker.",
       buttons: [
         { id: "flow:start", title: "Let's start" },
         { id: "flow:how", title: "How it works" },
@@ -23,11 +23,11 @@ export function devSeedPage(): string {
     {
       from: "them",
       at: t + 126e3,
-      text: "*Proposed: Buy 75 MTNGH* @ GHS 6.50\n_MTN Ghana Limited_\nBuyers GHS 6.45 · Sellers GHS 6.50 · Last trade GHS 6.60 (live)\n\nGross: GHS 487.50\nCharges: GHS 12.19 (2.50% tier)\n*Total to pay: GHS 499.69*\nBreak-even sell price: GHS 6.83\n\n✅ Passed 8 plan checks",
+      text: "*Suggestion: buy 75 MTNGH* at about GHS 6.50\n_MTN Ghana Limited_\nBuyers GHS 6.45 · Sellers GHS 6.50 · Last trade GHS 6.60 (live)\n\nGross: GHS 487.50\nCharges: GHS 12.19 (2.50% tier)\n*Total to pay: GHS 499.69*\nBreak-even sell price: GHS 6.83\n\n✅ Fits your plan (8 checks)",
       buttons: [
-        { id: "x1", title: "Approve" },
+        { id: "x1", title: "I bought it" },
         { id: "x2", title: "Why?" },
-        { id: "x3", title: "Reject" },
+        { id: "x3", title: "Not now" },
       ],
     },
   ];

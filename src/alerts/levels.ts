@@ -58,7 +58,7 @@ export function alertsCard(holdings: Holding[], m: Mandate | null, quotes: Map<s
     if (l.takeProfitPrice) lines.push(`  Take profit (+${m.takeProfitPercent}%): at ${ghs(l.takeProfitPrice)} or more`);
     if (l.stopLossPrice) lines.push(`  Stop loss (-${m.stopLossPercent}%): below ${ghs(l.stopLossPrice)}`);
   }
-  lines.push("", "I check the best buyer's price every 30 minutes while the GSE is open and send you a ready proposal when a level is reached.");
+  lines.push("", "I check the best buyer's price every 30 minutes while the GSE is open and tell you when a level is reached, with what selling would bring in after charges.");
   if (m.neverSellAtLoss) lines.push("Stop loss is off because your plan says never sell at a loss.");
   return lines.join("\n");
 }

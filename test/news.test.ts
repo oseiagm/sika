@@ -150,3 +150,12 @@ describe("template replies", () => {
     expect(parseInbound(payload)[0]).toMatchObject({ kind: "button", buttonId: "update:show:0b8e3c1e-5a43-4d1f-9a7e-2f4b3c5d6e7f" });
   });
 });
+
+describe("WhatsApp formatting", () => {
+  it("turns Markdown bold and headings into WhatsApp bold, leaving WhatsApp bold alone", async () => {
+    const { whatsappFormat } = await import("../src/agent/loop");
+    expect(whatsappFormat("Hi! For **MTNGH**:")).toBe("Hi! For *MTNGH*:");
+    expect(whatsappFormat("## Your plan\nok")).toBe("*Your plan*\nok");
+    expect(whatsappFormat("Already *bold* here")).toBe("Already *bold* here");
+  });
+});

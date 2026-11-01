@@ -73,6 +73,11 @@ export function keepToolLinks(text: string, allowed: Set<string>): string {
   return replaceLinks(text, (url) => (url && allowed.has(url) ? null : "(link removed)"));
 }
 
+/** Markdown habits → WhatsApp formatting: **bold** becomes *bold*, and # headings become bold lines. */
+export function whatsappFormat(text: string): string {
+  return text.replace(/\*\*(.+?)\*\*/g, "*$1*").replace(/^#{1,6}\s+(.+)$/gm, "*$1*");
+}
+
 export async function runAgent(
   ctx: Omit<ToolContext, "outbox" | "sources">,
   history: { role: "user" | "assistant"; content: string }[],
@@ -100,7 +105,7 @@ export async function runAgent(
     const calls = (msg.tool_calls ?? []).filter((c) => c.type === "function");
     if (calls.length === 0) {
       const text = msg.content?.trim() ?? "";
-      const safe = keepToolLinks(text, sources);
+      const safe = whatsappFormat(keepToolLinks(text, sources));
       if (safe !== text) await ctx.db.audit(ctx.user.waId, "link_removed", { text });
       return { text: safe, outbox };
     }

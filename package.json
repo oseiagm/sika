@@ -14,6 +14,7 @@
   "keywords": [],
   "type": "module",
   "private": true,
+  "license": "MIT",
   "dependencies": {
     "@wasm-audio-decoders/common": "^9.0.7",
     "hono": "^4.13.14",

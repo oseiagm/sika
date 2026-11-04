@@ -4,6 +4,8 @@
 
 **Try it in your browser:** https://sika.cloudflareos-01eeeb.workers.dev. This is the same conversation that runs on WhatsApp.
 
+**3-minute demo video:** https://youtu.be/OhlmxiTKxJI
+
 In Ghana, people invest through brokers and talk on WhatsApp. Sika is the knowledgeable friend in between:
 1. **It gets to know you.** Five quick questions build an investor profile, scored the way advisers do it: the lower of your willingness and your capacity for risk.
 2. **It builds a plan with you.** Your goal, a monthly amount and your limits, set with a few taps.
@@ -116,6 +118,7 @@ Tests: `npm test` runs the unit tests, covering the fee engine, rules, suggestio
 - [User guide](docs/USER_GUIDE.md): how investors use Sika
 - [Conversation design](docs/ux-flow.md): the principles behind the flow
 - [Red-team results](docs/redteam.md)
+- [Demo video, feature by feature](docs/demo-script.md)
 - [Original plan](docs/plan.md)
 
 ## Running it yourself

@@ -103,6 +103,8 @@ The LLM only ever *proposes*. A trade happens only after all three steps pass, i
    - Record the video (about 3 minutes), write the README, and submit.
 
 ## Demo script (video)
+> The original idea, from before Sika stopped simulating trades. The final video follows [demo-script.md](demo-script.md).
+
 1. A voice note in WhatsApp: "GH₵500 a month, long term, I like banks and MTN, max 30% in one stock, never sell at a loss after fees." Sika replies with a mandate card and [Confirm].
 2. A voice note: "I have 200 MTN, bought at about 1.80, and some GCB, I think 3,000 cedis worth." Sika reads it back and asks only what is missing ("How many GCB shares?"). It then shows the list with [Looks right] [Fix in form]. The form is a WhatsApp Flow, pre-filled. Then it shows the break-even prices after fees, with estimates labelled.
 3. "Invest this month's 500." Sika proposes, for example, "Buy 150 MTNGH @ 3.25, fees GH₵12.19 (2.50% tier)", with its reasoning and news citations, plus [Approve][Why?][Reject]. Approve → fill → confirmation card.

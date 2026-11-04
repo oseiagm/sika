@@ -4,7 +4,7 @@
 
 **Links**
 - **Public GitHub repository:** https://github.com/oseiagm/sika
-- **3-minute demo video:** _(YouTube link after recording)_
+- **3-minute demo video:** https://youtu.be/OhlmxiTKxJI
 - **Live demo:** https://sika.cloudflareos-01eeeb.workers.dev
 
 ---
